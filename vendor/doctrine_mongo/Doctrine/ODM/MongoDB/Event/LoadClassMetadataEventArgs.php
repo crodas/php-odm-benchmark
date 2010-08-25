@@ -28,21 +28,20 @@ use Doctrine\Common\EventArgs,
  * @license     http://www.opensource.org/licenses/lgpl-license.php LGPL
  * @link        www.doctrine-project.com
  * @since       1.0
- * @version     $Revision$
  * @author      Jonathan H. Wage <jonwage@gmail.com>
  * @author      Roman Borschel <roman@code-factory.org>
  */
 class LoadClassMetadataEventArgs extends EventArgs
 {
-    private $_classMetadata;
+    private $classMetadata;
 
     public function __construct(ClassMetadata $classMetadata)
     {
-        $this->_classMetadata = $classMetadata;
+        $this->classMetadata = $classMetadata;
     }
 
     public function getClassMetadata()
     {
-        return $this->_classMetadata;
+        return $this->classMetadata;
     }
 }

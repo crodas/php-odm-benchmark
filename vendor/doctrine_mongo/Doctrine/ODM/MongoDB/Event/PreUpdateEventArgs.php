@@ -27,7 +27,6 @@ use Doctrine\ODM\MongoDB\DocumentManager;
  * @license     http://www.opensource.org/licenses/lgpl-license.php LGPL
  * @link        www.doctrine-project.com
  * @since       1.0
- * @version     $Revision$
  * @author      Jonathan H. Wage <jonwage@gmail.com>
  * @author      Roman Borschel <roman@code-factory.org>
  */
@@ -36,7 +35,7 @@ class PreUpdateEventArgs extends LifecycleEventArgs
     /**
      * @var array
      */
-    private $_documentChangeSet;
+    private $documentChangeSet;
 
     /**
      *
@@ -47,12 +46,12 @@ class PreUpdateEventArgs extends LifecycleEventArgs
     public function __construct($document, $dm, array &$changeSet)
     {
         parent::__construct($document, $dm);
-        $this->_documentChangeSet = &$changeSet;
+        $this->documentChangeSet = &$changeSet;
     }
 
     public function getDocumentChangeSet()
     {
-        return $this->_documentChangeSet;
+        return $this->documentChangeSet;
     }
 
     /**
@@ -62,7 +61,7 @@ class PreUpdateEventArgs extends LifecycleEventArgs
      */
     public function hasChangedField($field)
     {
-        return isset($this->_documentChangeSet[$field]);
+        return isset($this->documentChangeSet[$field]);
     }
 
     /**
@@ -73,9 +72,9 @@ class PreUpdateEventArgs extends LifecycleEventArgs
      */
     public function getOldValue($field)
     {
-        $this->_assertValidField($field);
+        $this->assertValidField($field);
 
-        return $this->_documentChangeSet[$field][0];
+        return $this->documentChangeSet[$field][0];
     }
 
     /**
@@ -86,9 +85,9 @@ class PreUpdateEventArgs extends LifecycleEventArgs
      */
     public function getNewValue($field)
     {
-        $this->_assertValidField($field);
+        $this->assertValidField($field);
 
-        return $this->_documentChangeSet[$field][1];
+        return $this->documentChangeSet[$field][1];
     }
 
     /**
@@ -99,14 +98,14 @@ class PreUpdateEventArgs extends LifecycleEventArgs
      */
     public function setNewValue($field, $value)
     {
-        $this->_assertValidField($field);
+        $this->assertValidField($field);
 
-        $this->_documentChangeSet[$field][1] = $value;
+        $this->documentChangeSet[$field][1] = $value;
     }
 
-    private function _assertValidField($field)
+    private function assertValidField($field)
     {
-        if ( ! isset($this->_documentChangeSet[$field])) {
+        if ( ! isset($this->documentChangeSet[$field])) {
             throw new \InvalidArgumentException(
                 "Field '".$field."' is not a valid field of the document ".
                 "'".get_class($this->getDocument())."' in PreInsertUpdateEventArgs."

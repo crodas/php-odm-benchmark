@@ -25,7 +25,6 @@ namespace Doctrine\ODM\MongoDB\Mapping\Types;
  * @license     http://www.opensource.org/licenses/lgpl-license.php LGPL
  * @link        www.doctrine-project.org
  * @since       1.0
- * @version     $Revision$
  * @author      Jonathan H. Wage <jonwage@gmail.com>
  * @author      Roman Borschel <roman@code-factory.org>
  */
@@ -33,7 +32,10 @@ class IdType extends Type
 {
     public function convertToDatabaseValue($value)
     {
-        return new \MongoId($value);
+        if ( ! $value instanceof \MongoId) {
+            $value = new \MongoId($value);
+        }
+        return $value;
     }
 
     public function convertToPHPValue($value)

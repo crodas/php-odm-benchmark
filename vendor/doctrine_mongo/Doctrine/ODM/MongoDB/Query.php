@@ -28,66 +28,78 @@ use Doctrine\ODM\MongoDB\DocumentManager,
  *
  * @license     http://www.opensource.org/licenses/lgpl-license.php LGPL
  * @since       1.0
- * @version     $Revision: 4930 $
  * @author      Jonathan H. Wage <jonwage@gmail.com>
  */
 class Query
 {
-    const TYPE_FIND   = 1;
-    const TYPE_UPDATE = 2;
-    const TYPE_REMOVE = 3;
-    const TYPE_GROUP  = 4;
+    const TYPE_FIND     = 1;
+    const TYPE_INSERT   = 2;
+    const TYPE_UPDATE   = 3;
+    const TYPE_REMOVE   = 4;
+    const TYPE_GROUP    = 5;
 
     /** The DocumentManager instance for this query */
-    private $_dm;
+    private $dm;
 
     /** The Document class name being queried */
-    private $_className;
+    private $className;
 
     /** The ClassMetadata instance for the class being queried */
-    private $_class;
+    private $class;
 
     /** Array of fields to select */
-    private $_select = array();
+    private $select = array();
 
     /** Array of criteria to query for */
-    private $_where = array();
+    private $where = array();
 
     /** Array to pass to MongoCollection::update() 2nd argument */
-    private $_newObj = array();
+    private $newObj = array();
 
     /** Array of sort options */
-    private $_sort = array();
+    private $sort = array();
 
     /** Limit number of records */
-    private $_limit = null;
+    private $limit = null;
 
     /** Skip a specified number of records (offset) */
-    private $_skip = null;
+    private $skip = null;
 
     /** Group information. */
-    private $_group = array();
+    private $group = array();
 
     /** Pass hints to the MongoCursor */
-    private $_hints = array();
+    private $hints = array();
 
     /** Pass immortal to cursor */
-    private $_immortal = false;
+    private $immortal = false;
 
     /** Pass snapshot to cursor */
-    private $_snapshot = false;
+    private $snapshot = false;
 
     /** Pass slaveOkaye to cursor */
-    private $_slaveOkay = false;
+    private $slaveOkay = false;
 
     /** Whether or not to try and hydrate the returned data */
-    private $_hydrate = true;
+    private $hydrate = true;
 
     /** Map reduce information */
-    private $_mapReduce = array();
+    private $mapReduce = array();
+
+    /** Field to select distinct values of */
+    private $distinctField;
 
     /** The type of query */
-    private $_type = self::TYPE_FIND;
+    private $type = self::TYPE_FIND;
+
+    /**
+     * Mongo command prefix
+     * @var string
+     */
+    private $cmd;
+
+    /** The current field adding conditions to */
+    private $currentField;
 
     /** Refresh hint */
     const HINT_REFRESH = 1;
@@ -100,11 +112,11 @@ class Query
      */
     public function __construct(DocumentManager $dm, $className = null)
     {
-        $this->_dm = $dm;
-        $this->_hydrator = $dm->getHydrator();
+        $this->dm = $dm;
+        $this->hydrator = $dm->getHydrator();
+        $this->cmd = $dm->getConfiguration()->getMongoCmd();
         if ($className !== null) {
-            $this->_className = $className;
-            $this->_class = $this->_dm->getClassMetadata($className);
+            $this->from($className);
         }
     }
 
@@ -115,7 +127,7 @@ class Query
      */
     public function getDocumentManager()
     {
-        return $this->_dm;
+        return $this->dm;
     }
 
     /**
@@ -125,7 +137,7 @@ class Query
      */
     public function getType()
     {
-        return $this->_type;
+        return $this->type;
     }
 
     /**
@@ -136,7 +148,7 @@ class Query
      */
     public function hydrate($bool)
     {
-        $this->_hydrate = $bool;
+        $this->hydrate = $bool;
         return $this;
     }
 
@@ -148,7 +160,7 @@ class Query
      */
     public function slaveOkay($bool = true)
     {
-        $this->_slaveOkay = $bool;
+        $this->slaveOkay = $bool;
         return $this;
     }
 
@@ -160,7 +172,7 @@ class Query
      */
     public function snapshot($bool = true)
     {
-        $this->_snapshot = $bool;
+        $this->snapshot = $bool;
         return $this;
     }
 
@@ -172,7 +184,7 @@ class Query
      */
     public function immortal($bool = true)
     {
-        $this->_immortal = $bool;
+        $this->immortal = $bool;
         return $this;
     }
 
@@ -184,7 +196,7 @@ class Query
      */
     public function hint($keyPattern)
     {
-        $this->_hints[] = $keyPattern;
+        $this->hints[] = $keyPattern;
         return $this;
     }
 
@@ -196,11 +208,20 @@ class Query
      */
     public function from($className)
     {
-        if ($className !== null) {
-            $this->_className = $className;
-            $this->_class = $this->_dm->getClassMetadata($className);
+        if (is_array($className)) {
+            $classNames = $className;
+            $className = $classNames[0];
+
+            $discriminatorField = $this->dm->getClassMetadata($className)->discriminatorField['name'];
+            $discriminatorValues = $this->dm->getDiscriminatorValues($classNames);
+            $this->field($discriminatorField)->in($discriminatorValues);
         }
-        $this->_type = self::TYPE_FIND;
+
+        if ($className !== null) {
+            $this->className = $className;
+            $this->class = $this->dm->getClassMetadata($className);
+        }
+        $this->type = self::TYPE_FIND;
         return $this;
     }
 
@@ -225,10 +246,27 @@ class Query
     public function update($className = null)
     {
         if ($className !== null) {
-            $this->_className = $className;
-            $this->_class = $this->_dm->getClassMetadata($className);
+            $this->className = $className;
+            $this->class = $this->dm->getClassMetadata($className);
         }
-        $this->_type = self::TYPE_UPDATE;
+        $this->type = self::TYPE_UPDATE;
+        return $this;
+    }
+
+    /**
+     * Sets the query as an insert query for the given class name or change
+     * the type for the current class.
+     *
+     * @param string $className
+     * @return Query
+     */
+    public function insert($className = null)
+    {
+        if ($className !== null) {
+            $this->className = $className;
+            $this->class = $this->dm->getClassMetadata($className);
+        }
+        $this->type = self::TYPE_INSERT;
         return $this;
     }
 
@@ -242,10 +280,10 @@ class Query
     public function remove($className = null)
     {
         if ($className !== null) {
-            $this->_className = $className;
-            $this->_class = $this->_dm->getClassMetadata($className);
+            $this->className = $className;
+            $this->class = $this->dm->getClassMetadata($className);
         }
-        $this->_type = self::TYPE_REMOVE;
+        $this->type = self::TYPE_REMOVE;
         return $this;
     }
 
@@ -260,11 +298,24 @@ class Query
      */
     public function group($keys, array $initial)
     {
-        $this->_group = array(
+        $this->group = array(
             'keys' => $keys,
             'initial' => $initial
         );
-        $this->_type = self::TYPE_GROUP;
+        $this->type = self::TYPE_GROUP;
+        return $this;
+    }
+
+    /**
+     * The distinct method queries for a list of distinct values for the given
+     * field for the document being queried for.
+     *
+     * @param string $field
+     * @return Query
+     */
+    public function distinct($field)
+    {
+        $this->distinctField = $field;
         return $this;
     }
 
@@ -276,194 +327,281 @@ class Query
      */
     public function select($fieldName = null)
     {
-        $this->_select = func_get_args();
+        $select = func_get_args();
+        foreach ($select as $fieldName) {
+            $this->select[] = $fieldName;
+        }
         return $this;
     }
 
     /**
-     * Add a new field to select.
+     * Select a slice of an embedded document.
      *
      * @param string $fieldName
+     * @param integer $skip
+     * @param integer $limit
      * @return Query
      */
-    public function addSelect($fieldName = null)
+    public function selectSlice($fieldName, $skip, $limit = null)
     {
-        $select = func_get_args();
-        foreach ($select as $fieldName) {
-            $this->_select[] = $fieldName;
+        $slice = array($skip);
+        if ($limit !== null) {
+            $slice[] = $limit;
         }
+        $this->select[$fieldName][$this->cmd . 'slice'] = $slice;
+        return $this;
+    }
+
+    /**
+     * Set the current field to operate on.
+     *
+     * @param string $field
+     * @return Query
+     */
+    public function field($field)
+    {
+        $this->currentField = $field;
         return $this;
     }
 
     /**
      * Add a new where criteria erasing all old criteria.
      *
-     * @param string $fieldName
      * @param string $value
      * @return Query
      */
-    public function where($fieldName, $value)
+    public function equals($value, array $options = array())
     {
-        $this->_where = array();
-        $this->addWhere($fieldName, $value);
+        $value = $this->prepareWhereValue($this->currentField, $value);
+
+        if (isset($options['elemMatch'])) {
+            return $this->elemMatch($value, $options);
+        }
+
+        if (isset($options['not'])) {
+            return $this->not($value, $options);
+        }
+
+        if (isset($this->where[$this->currentField])) {
+            $this->where[$this->currentField] = array_merge_recursive($this->where[$this->currentField], $value);
+        } else {
+            $this->where[$this->currentField] = $value;
+        }
+
         return $this;
     }
 
     /**
-     * Add a new where criteria.
+     * Add $where javascript function to reduce result sets.
      *
-     * @param string $fieldName
-     * @param string $value
+     * @param string $javascript
      * @return Query
      */
-    public function addWhere($fieldName, $value)
+    public function where($javascript)
     {
-        if ($fieldName === $this->_class->identifier) {
-            $fieldName = '_id';
-            $value = new \MongoId($value);
-        }
-        if (isset($this->_where[$fieldName])) {
-            $this->_where[$fieldName] = array_merge($this->_where[$fieldName], $value);
-        } else {
-            $this->_where[$fieldName] = $value;
-        }
+        return $this->field($this->cmd . 'where')->equals($javascript);
+    }
+
+    /**
+     * Add element match to query.
+     *
+     * @param string $value
+     * @param array $options
+     * @return Query
+     */
+    public function elemMatch($value, array $options = array())
+    {
+        $e = explode('.', $this->currentField);
+        $fieldName = array_pop($e);
+        $embeddedPath = implode('.', $e);
+        $this->where[$embeddedPath][$this->cmd . 'elemMatch'][$fieldName] = $value;
         return $this;
+    }
+
+    /**
+     * Add element match operator to the query.
+     *
+     * @param string $operator 
+     * @param string $value 
+     * @return Query
+     */
+    public function elemMatchOperator($operator, $value)
+    {
+        $e = explode('.', $this->currentField);
+        $fieldName = array_pop($e);
+        $embeddedPath = implode('.', $e);
+        $this->where[$embeddedPath][$this->cmd . 'elemMatch'][$fieldName][$operator] = $value;
+        return $this;
+    }
+
+    /**
+     * Add MongoDB operator to the query.
+     *
+     * @param string $operator
+     * @param string $value
+     * @param array $options
+     * @return Query
+     */
+    public function operator($operator, $value, array $options = array())
+    {
+        if (isset($options['elemMatch'])) {
+            return $this->elemMatchOperator($operator, $value);
+        }
+        if (isset($options['not'])) {
+            $this->where[$this->currentField][$this->cmd . 'not'][$operator] = $value;
+            return $this;
+        }
+        $this->where[$this->currentField][$operator] = $value;
+        return $this;
+    }
+
+    /**
+     * Add a new where not criteria
+     *
+     * @param string $value
+     * @param array $options
+     * @return Query
+     */
+    public function not($value, array $options = array())
+    {
+        return $this->operator($this->cmd . 'not', $value);
     }
 
     /**
      * Add a new where in criteria.
      *
-     * @param string $fieldName
      * @param mixed $values
+     * @param array $options
      * @return Query
      */
-    public function whereIn($fieldName, $values)
+    public function in($values, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$in' => (array) $values));
+        return $this->operator($this->cmd . 'in', $values, $options);
     }
 
     /**
      * Add where not in criteria.
      *
-     * @param string $fieldName
      * @param mixed $values
+     * @param array $options
      * @return Query
      */
-    public function whereNotIn($fieldName, $values)
+    public function notIn($values, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$nin' => (array) $values));
+        return $this->operator($this->cmd . 'nin', (array) $values, $options);
     }
 
     /**
      * Add where not equal criteria.
      *
-     * @param string $fieldName
      * @param string $value
+     * @param array $options
      * @return Query
      */
-    public function whereNotEqual($fieldName, $value)
+    public function notEqual($value, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$ne' => $value));
+        return $this->operator($this->cmd . 'ne', $value, $options);
     }
 
     /**
      * Add where greater than criteria.
      *
-     * @param string $fieldName
      * @param string $value
+     * @param array $options
      * @return Query
      */
-    public function whereGt($fieldName, $value)
+    public function greaterThan($value, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$gt' => $value));
+        return $this->operator($this->cmd . 'gt', $value, $options);
     }
 
     /**
      * Add where greater than or equal to criteria.
      *
-     * @param string $fieldName
      * @param string $value
+     * @param array $options
      * @return Query
      */
-    public function whereGte($fieldName, $value)
+    public function greaterThanOrEq($value, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$gte' => $value));
+        return $this->operator($this->cmd . 'gte', $value, $options);
     }
 
     /**
      * Add where less than criteria.
      *
-     * @param string $fieldName
      * @param string $value
+     * @param array $options
      * @return Query
      */
-    public function whereLt($fieldName, $value)
+    public function lessThan($value, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$lt' => $value));
+        return $this->operator($this->cmd . 'lt', $value, $options);
     }
 
     /**
      * Add where less than or equal to criteria.
      *
-     * @param string $fieldName
      * @param string $value
+     * @param array $options
      * @return Query
      */
-    public function whereLte($fieldName, $value)
+    public function lessThanOrEq($value, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$lte' => $value));
+        return $this->operator($this->cmd . 'lte', $value, $options);
     }
 
     /**
      * Add where range criteria.
      *
-     * @param string $fieldName
      * @param string $start
      * @param string $end
+     * @param array $options
      * @return Query
      */
-    public function whereRange($fieldName, $start, $end)
+    public function range($start, $end, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$gt' => $start, '$lt' => $end));
+        return $this->operator($this->cmd . 'gt', $start, $options)
+            ->operator($this->cmd . 'lt', $end, $options);
     }
 
     /**
      * Add where size criteria.
      *
-     * @param string $fieldName
      * @param string $size
+     * @param array $options
      * @return Query
      */
-    public function whereSize($fieldName, $size)
+    public function size($size, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$size' => $size));
+        return $this->operator($this->cmd . 'size', $size, $options);
     }
 
     /**
      * Add where exists criteria.
      *
-     * @param string $fieldName
      * @param string $bool
+     * @param array $options
      * @return Query
      */
-    public function whereExists($fieldName, $bool)
+    public function exists($bool, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$exists' => $bool));
+        return $this->operator($this->cmd . 'exists', $bool, $options);
     }
 
     /**
      * Add where type criteria.
      *
-     * @param string $fieldName
      * @param string $type
+     * @param array $options
      * @return Query
      */
-    public function whereType($fieldName, $type)
+    public function type($type, array $options = array())
     {
         $map = array(
             'double' => 1,
             'string' => 2,
-            'embedded' => 3,
+            'object' => 3,
             'array' => 4,
             'binary' => 5,
             'undefined' => 6,
@@ -472,69 +610,54 @@ class Query
             'date' => 9,
             'null' => 10,
             'regex' => 11,
-            'dbpointer' => 12,
             'jscode' => 13,
             'symbol' => 14,
-            'jscode_w_s' => 15,
-            'timestamp' => 16,
-            'integer64' => 17,
+            'jscodewithscope' => 15,
+            'integer32' => 16,
+            'timestamp' => 17,
+            'integer64' => 18,
             'minkey' => 255,
             'maxkey' => 127
         );
         if (is_string($type) && isset($map[$type])) {
             $type = $map[$type];
         }
-        return $this->addWhere($fieldName, array('$type' => $type));
+        return $this->operator($this->cmd . 'type', $type, $options);
     }
 
     /**
      * Add where all criteria.
      *
-     * @param string $fieldName
      * @param mixed $values
+     * @param array $options
      * @return Query
      */
-    public function whereAll($fieldName, $values)
+    public function all($values, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$all' => (array) $values));
+        return $this->operator($this->cmd . 'all', (array) $values, $options);
     }
 
     /**
      * Add where mod criteria.
      *
-     * @param string $fieldName
      * @param string $mod
+     * @param array $options
      * @return Query
      */
-    public function whereMod($fieldName, $mod)
+    public function mod($mod, array $options = array())
     {
-        return $this->addWhere($fieldName, array('$mod' => $mod));
+        return $this->operator($this->cmd . 'mod', $mod, $options);
     }
 
     /**
      * Set sort and erase all old sorts.
      *
-     * @param string $fieldName
      * @param string $order
      * @return Query
      */
     public function sort($fieldName, $order)
     {
-        $this->_sort = array();
-        $this->addSort($fieldName, $order);
-        return $this;
-    }
-
-    /**
-     * Add a new sort order.
-     *
-     * @param string $fieldName
-     * @param string $order
-     * @return Query
-     */
-    public function addSort($fieldName, $order)
-    {
-        $this->_sort[$fieldName] = strtolower($order) === 'asc' ? 1 : -1;
+        $this->sort[$fieldName] = strtolower($order) === 'asc' ? 1 : -1;
         return $this;
     }
 
@@ -546,7 +669,7 @@ class Query
      */
     public function limit($limit)
     {
-        $this->_limit = $limit;
+        $this->limit = $limit;
         return $this;
     }
 
@@ -558,7 +681,7 @@ class Query
      */
     public function skip($skip)
     {
-        $this->_skip = $skip;
+        $this->skip = $skip;
         return $this;
     }
 
@@ -572,7 +695,7 @@ class Query
      */
     public function mapReduce($map, $reduce, array $options = array())
     {
-        $this->_mapReduce = array(
+        $this->mapReduce = array(
             'map' => $map,
             'reduce' => $reduce,
             'options' => $options
@@ -588,7 +711,7 @@ class Query
      */
     public function map($map)
     {
-        $this->_mapReduce['map'] = $map;
+        $this->mapReduce['map'] = $map;
         return $this;
     }
 
@@ -600,7 +723,7 @@ class Query
      */
     public function reduce($reduce)
     {
-        $this->_mapReduce['reduce'] = $reduce;
+        $this->mapReduce['reduce'] = $reduce;
         return $this;
     }
 
@@ -612,24 +735,36 @@ class Query
      */
     public function mapReduceOptions(array $options)
     {
-        $this->_mapReduce['options'] = $options;
+        $this->mapReduce['options'] = $options;
         return $this;
     }
 
     /**
      * Set field to value.
      *
-     * @param string $name
      * @param mixed $value
      * @param boolean $atomic
      * @return Query
      */
-    public function set($name, $value, $atomic = true)
+    public function set($value, $atomic = true)
     {
+        if ($this->type == self::TYPE_INSERT) {
+            $atomic = false;
+        }
         if ($atomic === true) {
-            $this->_newObj['$set'][$name] = $value;
+            $this->newObj[$this->cmd . 'set'][$this->currentField] = $value;
         } else {
-            $this->_newObj[$name] = $value;
+            if (strpos($this->currentField, '.') !== false) {
+                $e = explode('.', $this->currentField);
+                $current = &$this->newObj;
+                foreach ($e as $v) {
+                    $current[$v] = null;
+                    $current = &$current[$v];
+                }
+                $current = $value;
+            } else {
+                $this->newObj[$this->currentField] = $value;
+            }
         }
         return $this;
     }
@@ -641,7 +776,7 @@ class Query
      */
     public function setNewObj($newObj)
     {
-        $this->_newObj = $newObj;
+        $this->newObj = $newObj;
         return $this;
     }
 
@@ -649,25 +784,23 @@ class Query
      * Increment field by the number value if field is present in the document,
      * otherwise sets field to the number value.
      *
-     * @param string $name
      * @param integer $value
      * @return Query
      */
-    public function inc($name, $value)
+    public function inc($value)
     {
-        $this->_newObj['$inc'][$name] = $value;
+        $this->newObj[$this->cmd . 'inc'][$this->currentField] = $value;
         return $this;
     }
 
     /**
      * Deletes a given field.
      *
-     * @param string $field
      * @return Query
      */
-    public function unsetField($field)
+    public function unsetField()
     {
-        $this->_newObj['$unset'][$field] = 1;
+        $this->newObj[$this->cmd . 'unset'][$this->currentField] = 1;
         return $this;
     }
 
@@ -676,13 +809,12 @@ class Query
      * field to the array [value] if field is not present. If field is present
      * but is not an array, an error condition is raised.
      *
-     * @param string $field
      * @param mixed $value
      * @return Query
      */
-    public function push($field, $value)
+    public function push($value)
     {
-        $this->_newObj['$push'][$field] = $value;
+        $this->newObj[$this->cmd . 'push'][$this->currentField] = $value;
         return $this;
     }
 
@@ -692,62 +824,63 @@ class Query
      * present. If field is present but is not an array, an error condition is
      * raised.
      *
-     * @param string $field
      * @param array $valueArray
      * @return Query
      */
-    public function pushAll($field, array $valueArray)
+    public function pushAll(array $valueArray)
     {
-        $this->_newObj['$pushAll'][$field] = $valueArray;
+        $this->newObj[$this->cmd . 'pushAll'][$this->currentField] = $valueArray;
         return $this;
     }
 
     /**
      * Adds value to the array only if its not in the array already.
      *
-     * @param string $field
      * @param mixed $value
      * @return Query
      */
-    public function addToSet($field, $value)
+    public function addToSet($value)
     {
-        $this->_newObj['$addToSet'][$field] = $value;
+        $this->newObj[$this->cmd . 'addToSet'][$this->currentField] = $value;
         return $this;
     }
 
     /**
      * Adds values to the array only they are not in the array already.
      *
-     * @param string $field
      * @param array $values
      * @return Query
      */
-    public function addManyToSet($field, array $values)
+    public function addManyToSet(array $values)
     {
-        $this->_newObj['$addToSet'][$field]['$each'] = $values;
+        if ( ! isset($this->newObj[$this->cmd . 'addToSet'][$this->currentField])) {
+            $this->newObj[$this->cmd . 'addToSet'][$this->currentField][$this->cmd . 'each'] = array();
+        }
+        if ( ! is_array($this->newObj[$this->cmd . 'addToSet'][$this->currentField])) {
+            $this->newObj[$this->cmd . 'addToSet'][$this->currentField] = array($this->cmd . 'each' => array($this->newObj[$this->cmd . 'addToSet'][$this->currentField]));
+        }
+        $this->newObj[$this->cmd . 'addToSet'][$this->currentField][$this->cmd . 'each'] = array_merge_recursive($this->newObj[$this->cmd . 'addToSet'][$this->currentField][$this->cmd . 'each'], $values);
     }
 
     /**
      * Removes first element in an array
      *
-     * @param string $field  The field name
      * @return Query
      */
-    public function popFirst($field)
+    public function popFirst()
     {
-        $this->_newObj['$pop'][$field] = 1;
+        $this->newObj[$this->cmd . 'pop'][$this->currentField] = 1;
         return $this;
     }
 
     /**
      * Removes last element in an array
      *
-     * @param string $field  The field name
      * @return Query
      */
-    public function popLast($field)
+    public function popLast()
     {
-        $this->_newObj['$pop'][$field] = -1;
+        $this->newObj[$this->cmd . 'pop'][$this->currentField] = -1;
         return $this;
     }
 
@@ -755,13 +888,12 @@ class Query
      * Removes all occurrences of value from field, if field is an array.
      * If field is present but is not an array, an error condition is raised.
      *
-     * @param string $field
      * @param mixed $value
      * @return Query
      */
-    public function pull($field, $value)
+    public function pull($value)
     {
-        $this->_newObj['$pull'][$field] = $value;
+        $this->newObj[$this->cmd . 'pull'][$this->currentField] = $value;
         return $this;
     }
 
@@ -770,13 +902,12 @@ class Query
      * field is an array. If field is present but is not an array, an error
      * condition is raised.
      *
-     * @param string $field
      * @param array $valueArray
      * @return Query
      */
-    public function pullAll($field, array $valueArray)
+    public function pullAll(array $valueArray)
     {
-        $this->_newObj['$pullAll'][$field] = $valueArray;
+        $this->newObj[$this->cmd . 'pullAll'][$this->currentField] = $valueArray;
         return $this;
     }
 
@@ -799,25 +930,40 @@ class Query
      */
     public function execute(array $options = array())
     {
-        switch ($this->_type) {
+        switch ($this->type) {
             case self::TYPE_FIND;
+                if ($this->distinctField !== null) {
+                    $result = $this->dm->getDocumentDB($this->className)
+                        ->command(array(
+                            'distinct' => $this->dm->getDocumentCollection($this->className)->getName(),
+                            'key' => $this->distinctField,
+                            'query' => $this->where
+                        ));
+                    return $result['values'];
+                }
                 return $this->getCursor()->getResults();
                 break;
 
             case self::TYPE_REMOVE;
-                return $this->_dm->getDocumentCollection($this->_className)
-                    ->remove($this->_where, $options);
+                return $this->dm->getDocumentCollection($this->className)
+                    ->remove($this->where, $options);
                 break;
 
             case self::TYPE_UPDATE;
-                return $this->_dm->getDocumentCollection($this->_className)
-                    ->update($this->_where, $this->_newObj, $options);
+                return $this->dm->getDocumentCollection($this->className)
+                    ->update($this->where, $this->newObj, $options);
                 break;
+            
+            case self::TYPE_INSERT;
+                return $this->dm->getDocumentCollection($this->className)
+                    ->insert($this->newObj);
+                break;
+
             case self::TYPE_GROUP;
-                return $this->_dm->getDocumentCollection($this->_className)
+                return $this->dm->getDocumentCollection($this->className)
                     ->group(
-                        $this->_group['keys'], $this->_group['initial'],
-                        $this->_mapReduce['reduce'], $this->_where
+                        $this->group['keys'], $this->group['initial'],
+                        $this->mapReduce['reduce'], $this->where
                     );
                 break;
         }
@@ -851,31 +997,31 @@ class Query
      */
     public function getCursor()
     {
-        if ($this->_type !== self::TYPE_FIND) {
+        if ($this->type !== self::TYPE_FIND) {
             throw new \InvalidArgumentException(
                 'Cannot get cursor for an update or remove query. Use execute() method.'
             );
         }
 
-        if (isset($this->_mapReduce['map']) && $this->_mapReduce['reduce']) {
-            $cursor = $this->_dm->mapReduce($this->_className, $this->_mapReduce['map'], $this->_mapReduce['reduce'], $this->_where, isset($this->_mapReduce['options']) ? $this->_mapReduce['options'] : array());
+        if (isset($this->mapReduce['map']) && $this->mapReduce['reduce']) {
+            $cursor = $this->dm->mapReduce($this->className, $this->mapReduce['map'], $this->mapReduce['reduce'], $this->where, isset($this->mapReduce['options']) ? $this->mapReduce['options'] : array());
             $cursor->hydrate(false);
         } else {
-            if (isset($this->_mapReduce['reduce'])) {
-                $this->_where['$where'] = $this->_mapReduce['reduce'];
+            if (isset($this->mapReduce['reduce'])) {
+                $this->where[$this->cmd . 'where'] = $this->mapReduce['reduce'];
             }
-            $cursor = $this->_dm->find($this->_className, $this->_where, $this->_select);
-            $cursor->hydrate($this->_hydrate);
+            $cursor = $this->dm->find($this->className, $this->where, $this->select);
+            $cursor->hydrate($this->hydrate);
         }
-        $cursor->limit($this->_limit);
-        $cursor->skip($this->_skip);
-        $cursor->sort($this->_sort);
-        $cursor->immortal($this->_immortal);
-        $cursor->slaveOkay($this->_slaveOkay);
-        if ($this->_snapshot) {
+        $cursor->limit($this->limit);
+        $cursor->skip($this->skip);
+        $cursor->sort($this->sort);
+        $cursor->immortal($this->immortal);
+        $cursor->slaveOkay($this->slaveOkay);
+        if ($this->snapshot) {
             $cursor->snapshot();
         }
-        foreach ($this->_hints as $keyPattern) {
+        foreach ($this->hints as $keyPattern) {
             $cursor->hint($keyPattern);
         }
         return $cursor;
@@ -894,26 +1040,57 @@ class Query
     /**
      * Gets an array of information about this query for debugging.
      *
+     * @param string $name
      * @return array $debug
      */
-    public function debug()
+    public function debug($name = null)
     {
-        return array(
-            'className' => $this->_className,
-            'type' => $this->_type,
-            'select' => $this->_select,
-            'where' => $this->_where,
-            'newObj' => $this->_newObj,
-            'sort' => $this->_sort,
-            'limit' => $this->_limit,
-            'skip' => $this->_skip,
-            'group' => $this->_group,
-            'hints' => $this->_hints,
-            'immortal' => $this->_immortal,
-            'snapshot' => $this->_snapshot,
-            'slaveOkay' => $this->_slaveOkay,
-            'hydrate' => $this->_hydrate,
-            'mapReduce' => $this->_mapReduce
+        $debug = array(
+            'className' => $this->className,
+            'type' => $this->type,
+            'select' => $this->select,
+            'where' => $this->where,
+            'newObj' => $this->newObj,
+            'sort' => $this->sort,
+            'limit' => $this->limit,
+            'skip' => $this->skip,
+            'group' => $this->group,
+            'hints' => $this->hints,
+            'immortal' => $this->immortal,
+            'snapshot' => $this->snapshot,
+            'slaveOkay' => $this->slaveOkay,
+            'hydrate' => $this->hydrate,
+            'mapReduce' => $this->mapReduce,
+            'distinctField' => $this->distinctField,
         );
+        if ($name !== null) {
+            return $debug[$name];
+        }
+        foreach ($debug as $key => $value) {
+            if ( ! $value) {
+                unset($debug[$key]);
+            }
+        }
+        return $debug;
+    }
+
+    private function prepareWhereValue(&$fieldName, $value)
+    {
+        if ($fieldName === $this->class->identifier) {
+            $fieldName = '_id';
+            if (is_array($value)) {
+                foreach ($value as $k => $v) {
+                    $value[$k] = $this->class->getDatabaseIdentifierValue($v);
+                }
+            } else {
+                $value = $this->class->getDatabaseIdentifierValue($value);
+            }
+        }
+        return $value;
+    }
+
+    public function __call($method, $arguments)
+    {
+        return $this->field($method);
     }
 }

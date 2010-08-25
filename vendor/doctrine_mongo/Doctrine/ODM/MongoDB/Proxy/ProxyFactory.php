@@ -29,7 +29,6 @@ use Doctrine\ODM\MongoDB\DocumentManager,
  *
  * @license     http://www.opensource.org/licenses/lgpl-license.php LGPL
  * @since       1.0
- * @version     $Revision: 4930 $
  * @author      Jonathan H. Wage <jonwage@gmail.com>
  * @author      Roman Borschel <roman@code-factory.org>
  * @author      Giorgio Sironi <piccoloprincipeazzurro@gmail.com>
@@ -37,13 +36,13 @@ use Doctrine\ODM\MongoDB\DocumentManager,
 class ProxyFactory
 {
     /** The DocumentManager this factory is bound to. */
-    private $_dm;
+    private $dm;
     /** Whether to automatically (re)generate proxy classes. */
-    private $_autoGenerate;
+    private $autoGenerate;
     /** The namespace that contains all proxy classes. */
-    private $_proxyNamespace;
+    private $proxyNamespace;
     /** The directory that contains all proxy classes. */
-    private $_proxyDir;
+    private $proxyDir;
 
     /**
      * Initializes a new instance of the <tt>ProxyFactory</tt> class that is
@@ -62,10 +61,10 @@ class ProxyFactory
         if ( ! $proxyNs) {
             throw ProxyException::proxyNamespaceRequired();
         }
-        $this->_dm = $dm;
-        $this->_proxyDir = $proxyDir;
-        $this->_autoGenerate = $autoGenerate;
-        $this->_proxyNamespace = $proxyNs;
+        $this->dm = $dm;
+        $this->proxyDir = $proxyDir;
+        $this->autoGenerate = $autoGenerate;
+        $this->proxyNamespace = $proxyNs;
     }
 
     /**
@@ -79,19 +78,19 @@ class ProxyFactory
     public function getProxy($className, $identifier)
     {
         $proxyClassName = str_replace('\\', '', $className) . 'Proxy';
-        $fqn = $this->_proxyNamespace . '\\' . $proxyClassName;
+        $fqn = $this->proxyNamespace . '\\' . $proxyClassName;
 
-        if ($this->_autoGenerate && ! class_exists($fqn, false)) {
-            $fileName = $this->_proxyDir . DIRECTORY_SEPARATOR . $proxyClassName . '.php';
-            $this->_generateProxyClass($this->_dm->getClassMetadata($className), $proxyClassName, $fileName, self::$_proxyClassTemplate);
+        if ($this->autoGenerate && ! class_exists($fqn, false)) {
+            $fileName = $this->proxyDir . DIRECTORY_SEPARATOR . $proxyClassName . '.php';
+            $this->generateProxyClass($this->dm->getClassMetadata($className), $proxyClassName, $fileName, self::$_proxyClassTemplate);
             require $fileName;
         }
 
-        if ( ! $this->_dm->getMetadataFactory()->hasMetadataFor($fqn)) {
-            $this->_dm->getMetadataFactory()->setMetadataFor($fqn, $this->_dm->getClassMetadata($className));
+        if ( ! $this->dm->getMetadataFactory()->hasMetadataFor($fqn)) {
+            $this->dm->getMetadataFactory()->setMetadataFor($fqn, $this->dm->getClassMetadata($className));
         }
 
-        return new $fqn($this->_dm, $identifier);
+        return new $fqn($this->dm, $identifier);
     }
 
     /**
@@ -104,12 +103,12 @@ class ProxyFactory
      */
     public function generateProxyClasses(array $classes, $toDir = null)
     {
-        $proxyDir = $toDir ?: $this->_proxyDir;
+        $proxyDir = $toDir ?: $this->proxyDir;
         $proxyDir = rtrim($proxyDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
         foreach ($classes as $class) {
             $proxyClassName = str_replace('\\', '', $class->name) . 'Proxy';
             $proxyFileName = $proxyDir . $proxyClassName . '.php';
-            $this->_generateProxyClass($class, $proxyClassName, $proxyFileName, self::$_proxyClassTemplate);
+            $this->generateProxyClass($class, $proxyClassName, $proxyFileName, self::$_proxyClassTemplate);
         }
     }
 
@@ -121,10 +120,10 @@ class ProxyFactory
      * @param $proxyClassName
      * @param $file The path of the file to write to.
      */
-    private function _generateProxyClass($class, $proxyClassName, $fileName, $file)
+    private function generateProxyClass($class, $proxyClassName, $fileName, $file)
     {
-        $methods = $this->_generateMethods($class);
-        $sleepImpl = $this->_generateSleep($class);
+        $methods = $this->generateMethods($class);
+        $sleepImpl = $this->generateSleep($class);
 
         $placeholders = array(
             '<namespace>',
@@ -139,7 +138,7 @@ class ProxyFactory
         }
 
         $replacements = array(
-            $this->_proxyNamespace,
+            $this->proxyNamespace,
             $proxyClassName, $className,
             $methods, $sleepImpl
         );
@@ -155,7 +154,7 @@ class ProxyFactory
      * @param ClassMetadata $class
      * @return string The code of the generated methods.
      */
-    private function _generateMethods(ClassMetadata $class)
+    private function generateMethods(ClassMetadata $class)
     {
         $methods = '';
 
@@ -199,7 +198,7 @@ class ProxyFactory
 
                 $methods .= $parameterString . ')';
                 $methods .= PHP_EOL . '    {' . PHP_EOL;
-                $methods .= '        $this->_load();' . PHP_EOL;
+                $methods .= '        $this->load();' . PHP_EOL;
                 $methods .= '        return parent::' . $method->getName() . '(' . $argumentString . ');';
                 $methods .= PHP_EOL . '    }' . PHP_EOL;
             }
@@ -214,7 +213,7 @@ class ProxyFactory
      * @param $class
      * @return string
      */
-    private function _generateSleep(ClassMetadata $class)
+    private function generateSleep(ClassMetadata $class)
     {
         $sleepImpl = '';
 
@@ -262,12 +261,12 @@ class <proxyClassName> extends \<className> implements \Doctrine\ODM\MongoDB\Pro
         $this->__dm->getClassMetadata(__CLASS__)->setIdentifierValue($this, $this->__identifier);
     }
 
-    private function _load()
+    private function load()
     {
         if ( ! $this->__isInitialized__ && $this->__dm) {
             $this->__isInitialized__ = true;
-            if ($this->__dm->loadByID(get_class($this), $this->__identifier, true) === null) {
-                throw new \Doctrine\ODM\MongoDB\DocumentNotFoundException();
+            if ($this->__dm->loadByID(get_class($this), $this->__identifier) === null) {
+                throw \Doctrine\ODM\MongoDB\MongoDBException::documentNotFound(get_class($this), $this->__identifier);
             }
             unset($this->__dm);
             unset($this->__identifier);
@@ -278,9 +277,6 @@ class <proxyClassName> extends \<className> implements \Doctrine\ODM\MongoDB\Pro
 
     public function __sleep()
     {
-        if ( ! $this->__isInitialized__) {
-            throw new \RuntimeException("Not fully loaded proxy can not be serialized.");
-        }
         <sleepImpl>
     }
 }';

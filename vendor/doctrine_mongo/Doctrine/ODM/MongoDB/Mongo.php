@@ -25,13 +25,12 @@ namespace Doctrine\ODM\MongoDB;
  * @license     http://www.opensource.org/licenses/lgpl-license.php LGPL
  * @link        www.doctrine-project.org
  * @since       1.0
- * @version     $Revision$
  * @author      Jonathan H. Wage <jonwage@gmail.com>
  */
 class Mongo
 {
     /** The PHP Mongo instance. */
-    private $_mongo;
+    private $mongo;
 
     /**
      * Create a new Mongo wrapper instance.
@@ -42,11 +41,11 @@ class Mongo
     public function __construct($server = null, array $options = array())
     {
         if ($server instanceof \Mongo) {
-            $this->_mongo = $server;
+            $this->mongo = $server;
         } elseif ($server !== null) {
-            $this->_mongo = new \Mongo($server, $options);
+            $this->mongo = new \Mongo($server, $options);
         } else {
-            $this->_mongo = new \Mongo();
+            $this->mongo = new \Mongo();
         }
     }
 
@@ -57,7 +56,7 @@ class Mongo
      */
     public function setMongo(\Mongo $mongo)
     {
-        $this->_mongo = $mongo;
+        $this->mongo = $mongo;
     }
 
     /**
@@ -67,20 +66,20 @@ class Mongo
      */
     public function getMongo()
     {
-        return $this->_mongo;
+        return $this->mongo;
     }
 
     /** @proxy */
     public function __get($key)
     {
-        return $this->_mongo->$key;
+        return $this->mongo->$key;
     }
 
     /** @proxy */
     public function __call($method, $arguments)
     {
-        if (method_exists($this->_mongo, $method)) {
-            return call_user_func_array(array($this->_mongo, $method), $arguments);
+        if (method_exists($this->mongo, $method)) {
+            return call_user_func_array(array($this->mongo, $method), $arguments);
         }
         throw new \BadMethodCallException(sprintf('Method %s does not exist on %s', $method, get_class($this)));
     }

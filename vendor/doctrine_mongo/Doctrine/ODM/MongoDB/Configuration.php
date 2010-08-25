@@ -36,7 +36,6 @@ use Doctrine\ODM\MongoDB\Mapping\Driver\Driver,
  * @license     http://www.opensource.org/licenses/lgpl-license.php LGPL
  * @link        www.doctrine-project.com
  * @since       1.0
- * @version     $Revision$
  * @author      Jonathan H. Wage <jonwage@gmail.com>
  * @author      Roman Borschel <roman@code-factory.org>
  */
@@ -45,17 +44,9 @@ class Configuration
     /**
      * Array of attributes for this configuration instance.
      *
-     * @var array $_attributes
+     * @var array $attributes
      */
-    private $_attributes = array();
-
-    /**
-     * Create a new Configuration instance.
-     */
-    public function __construct()
-    {
-        $this->_attributes['metadataDriverImpl'] = new PHPDriver();
-    }
+    private $attributes = array('mongoCmd' => '$');
 
     /**
      * Adds a namespace under a certain alias.
@@ -65,7 +56,7 @@ class Configuration
      */
     public function addDocumentNamespace($alias, $namespace)
     {
-        $this->_attributes['documentNamespaces'][$alias] = $namespace;
+        $this->attributes['documentNamespaces'][$alias] = $namespace;
     }
 
     /**
@@ -73,15 +64,15 @@ class Configuration
      *
      * @param string $documentNamespaceAlias 
      * @return string
-     * @throws MappingException
+     * @throws MongoDBException
      */
     public function getDocumentNamespace($documentNamespaceAlias)
     {
-        if ( ! isset($this->_attributes['documentNamespaces'][$documentNamespaceAlias])) {
+        if ( ! isset($this->attributes['documentNamespaces'][$documentNamespaceAlias])) {
             throw MongoDBException::unknownDocumentNamespace($documentNamespaceAlias);
         }
 
-        return trim($this->_attributes['documentNamespaces'][$documentNamespaceAlias], '\\');
+        return trim($this->attributes['documentNamespaces'][$documentNamespaceAlias], '\\');
     }
 
     /**
@@ -92,7 +83,7 @@ class Configuration
      */
     public function setDocumentNamespaces(array $documentNamespaces)
     {
-        $this->_attributes['documentNamespaces'] = $documentNamespaces;
+        $this->attributes['documentNamespaces'] = $documentNamespaces;
     }
 
     /**
@@ -104,7 +95,21 @@ class Configuration
      */
     public function setMetadataDriverImpl(Driver $driverImpl)
     {
-        $this->_attributes['metadataDriverImpl'] = $driverImpl;
+        $this->attributes['metadataDriverImpl'] = $driverImpl;
+    }
+
+    /**
+     * Add a new default annotation driver with a correctly configured annotation reader.
+     * 
+     * @param array $paths
+     * @return Mapping\Driver\AnnotationDriver
+     */
+    public function newDefaultAnnotationDriver($paths = array())
+    {
+        $reader = new \Doctrine\Common\Annotations\AnnotationReader();
+        $reader->setDefaultAnnotationNamespace('Doctrine\ODM\MongoDB\Mapping\\');
+        
+        return new \Doctrine\ODM\MongoDB\Mapping\Driver\AnnotationDriver($reader, (array) $paths);
     }
 
     /**
@@ -114,8 +119,8 @@ class Configuration
      */
     public function getMetadataDriverImpl()
     {
-        return isset($this->_attributes['metadataDriverImpl']) ?
-            $this->_attributes['metadataDriverImpl'] : null;
+        return isset($this->attributes['metadataDriverImpl']) ?
+            $this->attributes['metadataDriverImpl'] : null;
     }
 
     /**
@@ -125,8 +130,8 @@ class Configuration
      */
     public function getMetadataCacheImpl()
     {
-        return isset($this->_attributes['metadataCacheImpl']) ?
-                $this->_attributes['metadataCacheImpl'] : null;
+        return isset($this->attributes['metadataCacheImpl']) ?
+                $this->attributes['metadataCacheImpl'] : null;
     }
 
     /**
@@ -136,7 +141,7 @@ class Configuration
      */
     public function setMetadataCacheImpl(Cache $cacheImpl)
     {
-        $this->_attributes['metadataCacheImpl'] = $cacheImpl;
+        $this->attributes['metadataCacheImpl'] = $cacheImpl;
     }
 
     /**
@@ -146,7 +151,7 @@ class Configuration
      */
     public function setProxyDir($dir)
     {
-        $this->_attributes['proxyDir'] = $dir;
+        $this->attributes['proxyDir'] = $dir;
     }
 
     /**
@@ -156,8 +161,8 @@ class Configuration
      */
     public function getProxyDir()
     {
-        return isset($this->_attributes['proxyDir']) ?
-                $this->_attributes['proxyDir'] : null;
+        return isset($this->attributes['proxyDir']) ?
+                $this->attributes['proxyDir'] : null;
     }
 
     /**
@@ -168,8 +173,8 @@ class Configuration
      */
     public function getAutoGenerateProxyClasses()
     {
-        return isset($this->_attributes['autoGenerateProxyClasses']) ?
-                $this->_attributes['autoGenerateProxyClasses'] : true;
+        return isset($this->attributes['autoGenerateProxyClasses']) ?
+                $this->attributes['autoGenerateProxyClasses'] : true;
     }
 
     /**
@@ -180,7 +185,7 @@ class Configuration
      */
     public function setAutoGenerateProxyClasses($bool)
     {
-        $this->_attributes['autoGenerateProxyClasses'] = $bool;
+        $this->attributes['autoGenerateProxyClasses'] = $bool;
     }
 
     /**
@@ -190,8 +195,8 @@ class Configuration
      */
     public function getProxyNamespace()
     {
-        return isset($this->_attributes['proxyNamespace']) ?
-                $this->_attributes['proxyNamespace'] : null;
+        return isset($this->attributes['proxyNamespace']) ?
+                $this->attributes['proxyNamespace'] : null;
     }
 
     /**
@@ -201,7 +206,7 @@ class Configuration
      */
     public function setProxyNamespace($ns)
     {
-        $this->_attributes['proxyNamespace'] = $ns;
+        $this->attributes['proxyNamespace'] = $ns;
     }
 
     /**
@@ -212,7 +217,7 @@ class Configuration
      */
     public function setDefaultDB($defaultDB)
     {
-        $this->_attributes['defaultDB'] = $defaultDB;
+        $this->attributes['defaultDB'] = $defaultDB;
     }
 
     /**
@@ -222,8 +227,8 @@ class Configuration
      */
     public function getDefaultDB()
     {
-        return isset($this->_attributes['defaultDB']) ?
-            $this->_attributes['defaultDB'] : null;
+        return isset($this->attributes['defaultDB']) ?
+            $this->attributes['defaultDB'] : null;
     }
 
     /**
@@ -233,7 +238,7 @@ class Configuration
      */
     public function setEnvironment($environment)
     {
-        $this->_attributes['environment'] = $environment;
+        $this->attributes['environment'] = $environment;
     }
 
     /**
@@ -243,8 +248,8 @@ class Configuration
      */
     public function getEnvironment()
     {
-        return isset($this->_attributes['environment']) ?
-            $this->_attributes['environment'] : null;
+        return isset($this->attributes['environment']) ?
+            $this->attributes['environment'] : null;
     }
 
     /**
@@ -254,8 +259,8 @@ class Configuration
      */
     public function getEnvironmentPrefix()
     {
-        return isset($this->_attributes['environment']) ?
-            sprintf('%s_', $this->_attributes['environment']) : null;
+        return isset($this->attributes['environment']) ?
+            sprintf('%s_', $this->attributes['environment']) : null;
     }
 
     /**
@@ -265,7 +270,7 @@ class Configuration
      */
     public function setLoggerCallable($loggerCallable)
     {
-        $this->_attributes['loggerCallable'] = $loggerCallable;
+        $this->attributes['loggerCallable'] = $loggerCallable;
     }
 
     /**
@@ -275,8 +280,8 @@ class Configuration
      */
     public function getLoggerCallable()
     {
-        return isset($this->_attributes['loggerCallable']) ?
-                $this->_attributes['loggerCallable'] : null;
+        return isset($this->attributes['loggerCallable']) ?
+                $this->attributes['loggerCallable'] : null;
     }
 
     /**
@@ -286,7 +291,7 @@ class Configuration
      */
     public function setDBPrefix($prefix = null)
     {
-        $this->_attributes['dbPrefix'] = $prefix;
+        $this->attributes['dbPrefix'] = $prefix;
     }
 
     /**
@@ -296,8 +301,8 @@ class Configuration
      */
     public function getDBPrefix()
     {
-        return isset($this->_attributes['dbPrefix']) ?
-            $this->_attributes['dbPrefix'] : null;
+        return isset($this->attributes['dbPrefix']) ?
+            $this->attributes['dbPrefix'] : null;
     }
 
     /**
@@ -307,7 +312,7 @@ class Configuration
      */
     public function setDBSuffix($suffix = null)
     {
-        $this->_attributes['dbSuffix'] = $suffix;
+        $this->attributes['dbSuffix'] = $suffix;
     }
 
     /**
@@ -317,7 +322,25 @@ class Configuration
      */
     public function getDBSuffix()
     {
-        return isset($this->_attributes['dbSuffix']) ?
-            $this->_attributes['dbSuffix'] : null;
+        return isset($this->attributes['dbSuffix']) ?
+            $this->attributes['dbSuffix'] : null;
+    }
+
+    /**
+     * Get mongodb command prefix - '$' by default
+     * @return string
+     */
+    public function getMongoCmd()
+    {
+        return $this->attributes['mongoCmd'];
+    }
+
+    /**
+     * Set mongodb command prefix
+     * @param string $cmd
+     */
+    public function setMongoCmd($cmd)
+    {
+        $this->attributes['mongoCmd'] = $cmd;
     }
 }

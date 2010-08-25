@@ -22,6 +22,7 @@ namespace Doctrine\ODM\MongoDB;
 use Doctrine\Common\Collections\Collection,
     Doctrine\ODM\MongoDB\Mapping\ClassMetadata,
     Doctrine\ODM\MongoDB\Proxy\Proxy,
+    Doctrine\ODM\MongoDB\DocumentManager,
     Closure;
 
 /**
@@ -29,11 +30,10 @@ use Doctrine\Common\Collections\Collection,
  *
  * @license     http://www.opensource.org/licenses/lgpl-license.php LGPL
  * @since       1.0
- * @version     $Revision: 4930 $
  * @author      Jonathan H. Wage <jonwage@gmail.com>
  * @author      Roman Borschel <roman@code-factory.org>
  */
-final class PersistentCollection implements Collection
+class PersistentCollection implements Collection
 {
     /**
      * A snapshot of the collection at the moment it was fetched from the database.
@@ -41,23 +41,11 @@ final class PersistentCollection implements Collection
      *
      * @var array
      */
-    private $_snapshot = array();
+    private $snapshot = array();
 
-    protected $_owner;
+    private $owner;
 
-    protected $_mapping;
-
-    /**
-     * The DocumentManager that manages the persistence of the collection.
-     *
-     * @var Doctrine\ODM\MongoDB\DocumentManager
-     */
-    private $_dm;
-
-    /**
-     * The class descriptor of the collection's document type.
-     */
-    private $_typeClass;
+    private $mapping;
 
     /**
      * Whether the collection is dirty and needs to be synchronized with the database
@@ -65,65 +53,112 @@ final class PersistentCollection implements Collection
      *
      * @var boolean
      */
-    private $_isDirty = false;
+    private $isDirty = false;
 
     /**
      * Whether the collection has already been initialized.
      * 
      * @var boolean
      */
-    private $_initialized = true;
+    private $initialized = true;
     
     /**
      * The wrapped Collection instance.
      * 
      * @var Collection
      */
-    private $_coll;
-
-    public function __construct(DocumentManager $dm, ClassMetadata $class, Collection $coll)
-    {
-        $this->_coll = $coll;
-        $this->_dm = $dm;
-        $this->_typeClass = $class;
-    }
+    private $coll;
 
     /**
-     * Initializes the collection by loading its contents from the database
-     * if the collection is not yet initialized.
+     * The DocumentManager that manages the persistence of the collection.
+     *
+     * @var Doctrine\ODM\MongoDB\DocumentManager
      */
-    private function _initialize()
+    private $dm;
+
+    /**
+     * Mongo command prefix
+     * @var string
+     */
+    private $cmd;
+
+    /**
+     * Array of references to load on initialization.
+     *
+     * @var array
+     */
+    private $references = array();
+
+    public function __construct(Collection $coll, DocumentManager $dm = null)
     {
-        if ( ! $this->_initialized) {
-            $collection = $this->_dm->getDocumentCollection($this->_typeClass->name);
+        $this->coll = $coll;
+        if ($dm !== null) {
+            $this->dm = $dm;
+            $this->cmd = $dm->getConfiguration()->getMongoCmd();
+        }
+    }
 
-            $ids = array();
-            foreach ($this->_coll as $document) {
-                $ids[] = $this->_typeClass->getIdentifierObject($document);
+    public function setReferences(array $references)
+    {
+        $this->references = $references;
+    }
+
+    private function initialize()
+    {
+        if ( ! $this->initialized) {
+            if ($this->isDirty) {
+                // Has NEW objects added through add(). Remember them.
+                $newObjects = $this->coll->toArray();
             }
+            $this->coll->clear();
 
-            $data = $collection->find(array('_id' => array('$in' => $ids)));
-            $hints = array(Query::HINT_REFRESH => Query::HINT_REFRESH);
-            foreach ($data as $id => $document) {
-                $document = $this->_dm->getUnitOfWork()->getOrCreateDocument($this->_typeClass->name, $document, $hints);
-                if ($document instanceof Proxy) {
-                    $document->__isInitialized__ = true;
-                    unset($document->__dm);
-                    unset($document->__identifier);
+            $groupedIds = array();
+            foreach ($this->references as $reference) {
+                $className = $this->dm->getClassNameFromDiscriminatorValue($this->mapping, $reference);
+                if ( ! isset($groupedIds[$className])) {
+                    $groupedIds[$className] = array();
+                }
+                $id = $reference[$this->cmd . 'id'];
+                $groupedIds[$className][] = $id;
+                $reference = $this->dm->getReference($className, (string) $id);
+                $this->add($reference);
+            }
+            foreach ($groupedIds as $className => $ids) {
+                $collection = $this->dm->getDocumentCollection($className);
+                $data = $collection->find(array('_id' => array($this->cmd . 'in' => $ids)));
+                $hints = array(Query::HINT_REFRESH => Query::HINT_REFRESH);
+                foreach ($data as $id => $documentData) {
+                    $document = $this->dm->getUnitOfWork()->getOrCreateDocument($className, $documentData, $hints);
+                    if ($document instanceof Proxy) {
+                        $document->__isInitialized__ = true;
+                        unset($document->__dm);
+                        unset($document->__identifier);
+                    }
                 }
             }
-
-            $this->_initialized = true;
+            $this->takeSnapshot();
+            // Reattach NEW objects added through add(), if any.
+            if (isset($newObjects)) {
+                foreach ($newObjects as $obj) {
+                    $this->coll->add($obj);
+                }
+                $this->isDirty = true;
+            }
+    
+            $this->initialized = true;
         }
     }
 
     /**
      * Marks this collection as changed/dirty.
      */
-    private function _changed()
+    private function changed()
     {
-        if ( ! $this->_isDirty) {
-            $this->_isDirty = true;
+        if ( ! $this->isDirty) {
+            $this->isDirty = true;
+            if ($this->dm && $this->mapping !== null && $this->dm->getClassMetadata(get_class($this->owner))->isChangeTrackingNotify()) {
+                $this->dm->getUnitOfWork()->scheduleForDirtyCheck($this->owner);
+            }
         }
     }
 
@@ -135,7 +170,7 @@ final class PersistentCollection implements Collection
      */
     public function isDirty()
     {
-        return $this->_isDirty;
+        return $this->isDirty;
     }
 
     /**
@@ -145,7 +180,7 @@ final class PersistentCollection implements Collection
      */
     public function setDirty($dirty)
     {
-        $this->_isDirty = $dirty;
+        $this->isDirty = $dirty;
     }
 
     /**
@@ -158,8 +193,8 @@ final class PersistentCollection implements Collection
      */
     public function setOwner($document, array $mapping)
     {
-        $this->_owner = $document;
-        $this->_mapping = $mapping;
+        $this->owner = $document;
+        $this->mapping = $mapping;
     }
 
     /**
@@ -168,8 +203,8 @@ final class PersistentCollection implements Collection
      */
     public function takeSnapshot()
     {
-        $this->_snapshot = $this->_coll->toArray();
-        $this->_isDirty = false;
+        $this->snapshot = $this->coll->toArray();
+        $this->isDirty = false;
     }
 
     /**
@@ -180,7 +215,7 @@ final class PersistentCollection implements Collection
      */
     public function getSnapshot()
     {
-        return $this->_snapshot;
+        return $this->snapshot;
     }
 
     /**
@@ -191,7 +226,7 @@ final class PersistentCollection implements Collection
      */
     public function getDeleteDiff()
     {
-        return array_udiff_assoc($this->_snapshot, $this->_coll->toArray(),
+        return array_udiff_assoc($this->snapshot, $this->coll->toArray(),
                 function($a, $b) {return $a === $b ? 0 : 1;});
     }
 
@@ -203,7 +238,7 @@ final class PersistentCollection implements Collection
      */
     public function getInsertDiff()
     {
-        return array_udiff_assoc($this->_coll->toArray(), $this->_snapshot,
+        return array_udiff_assoc($this->coll->toArray(), $this->snapshot,
                 function($a, $b) {return $a === $b ? 0 : 1;});
     }
 
@@ -215,17 +250,17 @@ final class PersistentCollection implements Collection
      */
     public function getOwner()
     {
-        return $this->_owner;
+        return $this->owner;
     }
 
     public function getMapping()
     {
-        return $this->_mapping;
+        return $this->mapping;
     }
 
     public function getTypeClass()
     {
-        return $this->_typeClass;
+        return $this->typeClass;
     }
 
     /**
@@ -235,7 +270,7 @@ final class PersistentCollection implements Collection
      */
     public function setInitialized($bool)
     {
-        $this->_initialized = $bool;
+        $this->initialized = $bool;
     }
     
     /**
@@ -245,21 +280,21 @@ final class PersistentCollection implements Collection
      */
     public function isInitialized()
     {
-        return $this->_initialized;
+        return $this->initialized;
     }
 
     /** {@inheritdoc} */
     public function first()
     {
-        $this->_initialize();
-        return $this->_coll->first();
+        $this->initialize();
+        return $this->coll->first();
     }
 
     /** {@inheritdoc} */
     public function last()
     {
-        $this->_initialize();
-        return $this->_coll->last();
+        $this->initialize();
+        return $this->coll->last();
     }
 
     /**
@@ -267,8 +302,8 @@ final class PersistentCollection implements Collection
      */
     public function remove($key)
     {
-        $this->_initialize();
-        $removed = $this->_coll->remove($key);
+        $this->initialize();
+        $removed = $this->coll->remove($key);
         return $removed;
     }
 
@@ -277,9 +312,9 @@ final class PersistentCollection implements Collection
      */
     public function removeElement($element)
     {
-        $this->_initialize();
-        $result = $this->_coll->removeElement($element);
-        $this->_changed();
+        $this->initialize();
+        $result = $this->coll->removeElement($element);
+        $this->changed();
         return $result;
     }
 
@@ -288,8 +323,8 @@ final class PersistentCollection implements Collection
      */
     public function containsKey($key)
     {
-        $this->_initialize();
-        return $this->_coll->containsKey($key);
+        $this->initialize();
+        return $this->coll->containsKey($key);
     }
 
     /**
@@ -297,8 +332,8 @@ final class PersistentCollection implements Collection
      */
     public function contains($element)
     {
-        $this->_initialize();
-        return $this->_coll->contains($element);
+        $this->initialize();
+        return $this->coll->contains($element);
     }
 
     /**
@@ -306,8 +341,8 @@ final class PersistentCollection implements Collection
      */
     public function exists(Closure $p)
     {
-        $this->_initialize();
-        return $this->_coll->exists($p);
+        $this->initialize();
+        return $this->coll->exists($p);
     }
 
     /**
@@ -315,8 +350,8 @@ final class PersistentCollection implements Collection
      */
     public function indexOf($element)
     {
-        $this->_initialize();
-        return $this->_coll->indexOf($element);
+        $this->initialize();
+        return $this->coll->indexOf($element);
     }
 
     /**
@@ -324,8 +359,8 @@ final class PersistentCollection implements Collection
      */
     public function get($key)
     {
-        $this->_initialize();
-        return $this->_coll->get($key);
+        $this->initialize();
+        return $this->coll->get($key);
     }
 
     /**
@@ -333,8 +368,8 @@ final class PersistentCollection implements Collection
      */
     public function getKeys()
     {
-        $this->_initialize();
-        return $this->_coll->getKeys();
+        $this->initialize();
+        return $this->coll->getKeys();
     }
 
     /**
@@ -342,8 +377,8 @@ final class PersistentCollection implements Collection
      */
     public function getValues()
     {
-        $this->_initialize();
-        return $this->_coll->getValues();
+        $this->initialize();
+        return $this->coll->getValues();
     }
 
     /**
@@ -351,8 +386,8 @@ final class PersistentCollection implements Collection
      */
     public function count()
     {
-        $this->_initialize();
-        return $this->_coll->count();
+        $this->initialize();
+        return $this->coll->count();
     }
 
     /**
@@ -360,9 +395,9 @@ final class PersistentCollection implements Collection
      */
     public function set($key, $value)
     {
-        $this->_initialize();
-        $this->_coll->set($key, $value);
-        $this->_changed();
+        $this->initialize();
+        $this->coll->set($key, $value);
+        $this->changed();
     }
 
     /**
@@ -370,8 +405,8 @@ final class PersistentCollection implements Collection
      */
     public function add($value)
     {
-        $this->_coll->add($value);
-        $this->_changed();
+        $this->coll->add($value);
+        $this->changed();
         return true;
     }
 
@@ -380,8 +415,8 @@ final class PersistentCollection implements Collection
      */
     public function isEmpty()
     {
-        $this->_initialize();
-        return $this->_coll->isEmpty();
+        $this->initialize();
+        return $this->coll->isEmpty();
     }
     
     /**
@@ -389,8 +424,8 @@ final class PersistentCollection implements Collection
      */
     public function getIterator()
     {
-        $this->_initialize();
-        return $this->_coll->getIterator();
+        $this->initialize();
+        return $this->coll->getIterator();
     }
 
     /**
@@ -398,8 +433,8 @@ final class PersistentCollection implements Collection
      */
     public function map(Closure $func)
     {
-        $this->_initialize();
-        return $this->_coll->map($func);
+        $this->initialize();
+        return $this->coll->map($func);
     }
 
     /**
@@ -407,8 +442,8 @@ final class PersistentCollection implements Collection
      */
     public function filter(Closure $p)
     {
-        $this->_initialize();
-        return $this->_coll->filter($p);
+        $this->initialize();
+        return $this->coll->filter($p);
     }
     
     /**
@@ -416,8 +451,8 @@ final class PersistentCollection implements Collection
      */
     public function forAll(Closure $p)
     {
-        $this->_initialize();
-        return $this->_coll->forAll($p);
+        $this->initialize();
+        return $this->coll->forAll($p);
     }
 
     /**
@@ -425,8 +460,8 @@ final class PersistentCollection implements Collection
      */
     public function partition(Closure $p)
     {
-        $this->_initialize();
-        return $this->_coll->partition($p);
+        $this->initialize();
+        return $this->coll->partition($p);
     }
     
     /**
@@ -434,8 +469,8 @@ final class PersistentCollection implements Collection
      */
     public function toArray()
     {
-        $this->_initialize();
-        return $this->_coll->toArray();
+        $this->initialize();
+        return $this->coll->toArray();
     }
 
     /**
@@ -443,15 +478,13 @@ final class PersistentCollection implements Collection
      */
     public function clear()
     {
-        $this->_initialize();
-        $result = $this->_coll->clear();
-        if ($this->_mapping->isOwningSide) {
-            $this->_changed();
-            $this->_dm->getUnitOfWork()->scheduleCollectionDeletion($this);
+        if ($this->initialized && $this->isEmpty()) {
+            return;
         }
-        
-        return $result;
-    }
+        $this->coll->clear();
+        $this->changed();
+        $this->takeSnapshot();
+     }
     
     /**
      * Called by PHP when this collection is serialized. Ensures that only the
@@ -462,7 +495,7 @@ final class PersistentCollection implements Collection
      */
     public function __sleep()
     {
-        return array('_coll');
+        return array('coll', 'initialized');
     }
     
     /* ArrayAccess implementation */
@@ -505,7 +538,7 @@ final class PersistentCollection implements Collection
     
     public function key()
     {
-        return $this->_coll->key();
+        return $this->coll->key();
     }
     
     /**
@@ -513,7 +546,7 @@ final class PersistentCollection implements Collection
      */
     public function current()
     {
-        return $this->_coll->current();
+        return $this->coll->current();
     }
     
     /**
@@ -521,7 +554,7 @@ final class PersistentCollection implements Collection
      */
     public function next()
     {
-        return $this->_coll->next();
+        return $this->coll->next();
     }
     
     /**
@@ -529,6 +562,6 @@ final class PersistentCollection implements Collection
      */
     public function unwrap()
     {
-        return $this->_coll;
+        return $this->coll;
     }
 }

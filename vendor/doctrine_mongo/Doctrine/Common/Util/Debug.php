@@ -93,7 +93,7 @@ final class Debug
                     $return = new \stdclass();
                     $return->{'__CLASS__'} = get_class($var);
 
-                    if ($var instanceof \Doctrine\ORM\Proxy\Proxy && ! $var->__isInitialized__) {
+                    if ($var instanceof \Doctrine\ODM\MongoDBProxy\Proxy && ! $var->__isInitialized__) {
                         $reflProperty = $reflClass->getProperty('_identifier');
                         $reflProperty->setAccessible(true);
 
@@ -103,7 +103,7 @@ final class Debug
                     } else {
                         $excludeProperties = array();
 
-                        if ($var instanceof \Doctrine\ORM\Proxy\Proxy) {
+                        if ($var instanceof \Doctrine\ODM\MongoDBProxy\Proxy) {
                             $excludeProperties = array('_entityPersister', '__isInitialized__', '_identifier');
                         }
 

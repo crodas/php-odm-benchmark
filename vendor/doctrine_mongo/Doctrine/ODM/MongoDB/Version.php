@@ -24,7 +24,6 @@ namespace Doctrine\ODM\MongoDB;
  *
  * @license     http://www.opensource.org/licenses/lgpl-license.php LGPL
  * @since       1.0
- * @version     $Revision: 4930 $
  * @author      Jonathan H. Wage <jonwage@gmail.com>
  * @author      Roman Borschel <roman@code-factory.org>
  */
@@ -33,7 +32,7 @@ class Version
     /**
      * Current Doctrine Version
      */
-    const VERSION = '1.0.0ALPHA1';
+    const VERSION = '1.0.0BETA1';
 
     /**
      * Compares a Doctrine version with the current one.

@@ -34,7 +34,6 @@ namespace Doctrine\Common\Util;
  * @version     $Revision: 3189 $
  * @author      Konsta Vesterinen <kvesteri@cc.hut.fi>
  * @author      Jonathan H. Wage <jonwage@gmail.com>
- * @author      Roman Borschel <roman@code-factory.org>
  */
 class Inflector
 {
