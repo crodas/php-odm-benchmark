@@ -20,26 +20,227 @@
  */
 
 /**
- * MondongoGroup.
+ * Mondongo Groups.
  *
  * @package Mondongo
  * @author  Pablo Díez Pascual <pablodip@gmail.com>
  */
-interface MondongoGroup extends ArrayAccess, Countable, IteratorAggregate
+class MondongoGroup implements ArrayAccess, Countable, IteratorAggregate
 {
-  public function add($element);
+  protected $elements = array();
 
-  public function set($key, $element);
+  protected $callback = array();
 
-  public function exists($key);
+  /*
+   * Constructor.
+   *
+   * @param array $elements An array of elements (optional).
+   * @param mixed $callback A callback for the changes (optional).
+   *
+   * @return void
+   */
+  public function __construct(array $elements = array(), $callback = null)
+  {
+    $this->elements = $elements;
+    $this->callback = $callback;
+  }
 
-  public function existsElement($element);
+  /*
+   * Set the elements.
+   *
+   * @param array $elements An array of elements.
+   *
+   * return void
+   */
+  public function setElements(array $elements)
+  {
+    $this->elements = $elements;
+  }
 
-  public function indexOf($element);
+  /**
+   * Returns the elements.
+   *
+   * @return array The elements.
+   */
+  public function getElements()
+  {
+    return $this->elements;
+  }
 
-  public function get($key);
+  /*
+   * Set the callback for the changes.
+   *
+   * @param mixed $callback A callback.
+   *
+   * @return voic
+   */
+  public function setCallback($callback)
+  {
+    $this->callback = $callback;
+  }
 
-  public function remove($key);
+  /**
+   * Returns the callback for the changes.
+   *
+   * @return mixed The callback.
+   */
+  public function getCallback()
+  {
+    return $this->callback;
+  }
 
-  public function clear();
+  /**
+   * Call the callback for the changes.
+   *
+   * @return void
+   */
+  protected function callback()
+  {
+    if ($this->callback)
+    {
+      call_user_func($this->callback, $this);
+    }
+  }
+
+  /**
+   * Add an element.
+   *
+   * @param mixed $element An element.
+   *
+   * @return void
+   */
+  public function add($element)
+  {
+    $this->elements[] = $element;
+
+    $this->callback();
+  }
+
+  /**
+   * Set an element.
+   *
+   * @param mixed $key     The key.
+   * @param mixed $element The element.
+   *
+   * @return void
+   */
+  public function set($key, $element)
+  {
+    $this->elements[$key] = $element;
+
+    $this->callback();
+  }
+
+  /**
+   * Returns if exists an element by key.
+   *
+   * @param mixed $key The key.
+   *
+   * @return boolean Returns if exists an element.
+   */
+  public function exists($key)
+  {
+    return isset($this->elements[$key]);
+  }
+
+  /**
+   * Returns if exists an element by element.
+   *
+   * @param mixed $element The element.
+   *
+   * @return boolean Returns if exists an element.
+   */
+  public function existsElement($element)
+  {
+    return in_array($element, $this->elements, true);
+  }
+
+  /**
+   * Returns the key of an element.
+   *
+   * @param mixed $elemen The element.
+   *
+   * @return mixed The key if the element exists, NULL otherwise.
+   */
+  public function indexOf($element)
+  {
+    return array_search($element, $this->elements, true);
+  }
+
+  /**
+   * Get an element by key.
+   *
+   * @param mixed $key The key.
+   *
+   * @return mixed The element if exists, NULL otherwise.
+   */
+  public function get($key)
+  {
+    return isset($this->elements[$key]) ? $this->elements[$key] : null;
+  }
+
+  /**
+   * Remove an element by key.
+   *
+   * @param mixed $key The key.
+   *
+   * @return void
+   */
+  public function remove($key)
+  {
+    unset($this->elements[$key]);
+
+    $this->callback();
+  }
+
+  /**
+   * Clear the group.
+   *
+   * @return void
+   */
+  public function clear()
+  {
+    $this->elements = array();
+
+    $this->callback();
+  }
+
+  /*
+   * ArrayAccess.
+   */
+  public function offsetExists($key)
+  {
+    return $this->exists($key);
+  }
+
+  public function offsetSet($key, $element)
+  {
+    return $this->set($key, $element);
+  }
+
+  public function offsetGet($key)
+  {
+    return $this->get($key);
+  }
+
+  public function offsetUnset($key)
+  {
+    return $this->remove($key);
+  }
+
+  /*
+   * Countable.
+   */
+  public function count()
+  {
+    return count($this->elements);
+  }
+
+  /*
+   * IteratorAggregate.
+   */
+  public function getIterator()
+  {
+    return new ArrayIterator($this->elements);
+  }
 }

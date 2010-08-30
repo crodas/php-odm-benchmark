@@ -39,8 +39,13 @@ class MondongoRepository
 
   protected $logCallable;
 
-  /*
+  /**
    * Constructor.
+   *
+   * @param string   $name     The document name (class).
+   * @param Mondongo $mondongo The Mondongo.
+   *
+   * @return void
    */
   public function __construct($name, Mondongo $mondongo)
   {
@@ -70,41 +75,72 @@ class MondongoRepository
     }
   }
 
-  /*
-   * Generic.
+  /**
+   * Returns the document name.
+   *
+   * @return string The document name.
    */
   public function getName()
   {
     return $this->name;
   }
 
+  /**
+   * Returns the Mondongo.
+   *
+   * @return Mondongo The Mondongo.
+   */
   public function getMondongo()
   {
     return $this->mondongo;
   }
 
+  /**
+   * Returns the definition.
+   *
+   * @return MondongoDefinitionDocument The definition.
+   */
   public function getDefinition()
   {
     return $this->definition;
   }
 
+  /**
+   * Returns the connection.
+   *
+   * @return MondongoConnection The connection.
+   */
   public function getConnection()
   {
     return $this->connection;
   }
 
+  /**
+   * Returns the collection.
+   *
+   * @return MondongoCollection The collection.
+   */
   public function getCollection()
   {
     return $this->collection;
   }
 
+  /**
+   * Returns the Mongo collection.
+   *
+   * @return MongoCollection The Mongo collection.
+   */
   public function getMongoCollection()
   {
     return $this->collection->getMongoCollection();
   }
 
-  /*
-   * Log.
+  /**
+   * Set the log callable.
+   *
+   * @param mixed $logCallable The log callable.
+   *
+   * @return void
    */
   public function setLogCallable($logCallable)
   {
@@ -116,17 +152,48 @@ class MondongoRepository
     ));
   }
 
+  /**
+   * Returns the log callable.
+   *
+   * @return mixed The log callable.
+   */
   public function getLogCallable()
   {
     return $this->logCallable;
   }
 
-  /*
-   * Find.
+  /**
+   * Find documents.
+   *
+   * Options:
+   *
+   *   * query:    the query (array)
+   *   * fields:   the fields (array)
+   *   * sort:     the sort
+   *   * limit:    the limit
+   *   * skip:     the skip
+   *   * one:      if returns one result (incompatible with limit)
+   *   * index_by: if index the results by a field
+   *
+   * @param array  $options An array of options.
+   *
+   * @return mixed The document/s found within the parameters.
    */
-  public function find($query = array(), array $options = array())
+  public function find($options = array())
   {
-    $cursor = $this->collection->find($query);
+    // query
+    if (!isset($options['query']))
+    {
+      $options['query'] = array();
+    }
+
+    // fields
+    if (!isset($options['fields']))
+    {
+      $options['fields'] = array();
+    }
+
+    $cursor = $this->collection->find($options['query'], $options['fields']);
 
     // sort
     if (isset($options['sort']))
@@ -220,28 +287,61 @@ class MondongoRepository
     return null;
   }
 
-  public function findOne($query = array(), array $options = array())
+  /**
+   * Find one document.
+   *
+   * @param array  $options An array of options.
+   *
+   * @return mixed The document found within the parameters.
+   *
+   * @see ::find()
+   */
+  public function findOne($options = array())
   {
-    return $this->find($query, array_merge($options, array('one' => true)));
+    return $this->find(array_merge($options, array('one' => true)));
   }
 
+  /**
+   * Find a document by id.
+   *
+   * @param mixed  $id The document id (string or MongoId object).
+   *
+   * @return mixed The document or NULL if it does not exists.
+   */
   public function get($id)
   {
-    $data = $this->collection->findOne(array('_id' => is_string($id) ? new MongoId($id) : $id));
+    $data = $this->collection->findOne(array('query' => array('_id' => is_string($id) ? new MongoId($id) : $id)));
 
     return $data ? $this->buildDocument($data) : null;
   }
 
-  /*
-   * Remove.
+  /**
+   * Remove documents.
+   *
+   * Options:
+   *
+   *   * query: the query
+   *
+   * @param string $options An array of options.
+   *
+   * @return void
    */
-  public function remove($query = array())
+  public function remove($options = array())
   {
-    $this->getCollection()->remove($query);
+    if (!isset($options['query']))
+    {
+      $options['query'] = array();
+    }
+
+    $this->getCollection()->remove($options['query']);
   }
 
-  /*
-   * BuildDocument.
+  /**
+   * Build a document.
+   *
+   * @param array $data The data.
+   *
+   * @return MondongoDocument The document.
    */
   protected function buildDocument($data)
   {
@@ -251,8 +351,12 @@ class MondongoRepository
     return $document;
   }
 
-  /*
-   * Save.
+  /**
+   * Save documents.
+   *
+   * @param array  $documents An array of documents.
+   *
+   * @return void
    */
   public function save($documents)
   {
@@ -339,8 +443,12 @@ class MondongoRepository
     }
   }
 
-  /*
-   * Delete.
+  /**
+   * Delete documents.
+   *
+   * @param array $documents An array of documents.
+   *
+   * @return void
    */
   public function delete($documents)
   {
@@ -376,8 +484,15 @@ class MondongoRepository
     }
   }
 
-  /*
-   * notifyEvent
+  /**
+   * Notify an event.
+   *
+   * @param array  $docs       The documents
+   * @param array  $events     The events.
+   * @param array  $extensions The extensions.
+   * @param string $event      The event.
+   *
+   * @return void
    */
   protected function notifyEvent($docs, $events, $extensions, $event)
   {
@@ -405,8 +520,10 @@ class MondongoRepository
     }
   }
 
-  /*
-   * Indexes.
+  /**
+   * Ensure the indexes.
+   *
+   * @return void
    */
   public function ensureIndexes()
   {
@@ -419,8 +536,15 @@ class MondongoRepository
     }
   }
 
-  /*
+  /**
    * __call
+   *
+   * @param string $name      The function name.
+   * @param array  $arguments The arguments.
+   *
+   * @return mixed The return of the extension.
+   *
+   * @throws BadMethodCallException If the method does not exists.
    */
   public function __call($name, $arguments)
   {

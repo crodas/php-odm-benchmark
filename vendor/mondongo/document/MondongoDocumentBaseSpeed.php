@@ -35,32 +35,83 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
 
   protected $fieldsModified = array();
 
-  /*
-   * Definition
+  /**
+   * Returns the definition (using MondongoContainer).
+   *
+   * @return MondongoDefinition The definition.
    */
   public function getDefinition()
   {
     return MondongoContainer::getDefinition(get_class($this));
   }
 
-  /*
-   * Modified.
+  /**
+   * Returns if the document is modified.
+   *
+   * @return bool Returns if the document is modified.
    */
   public function isModified()
   {
-    return (bool) $this->fieldsModified;
+    if ($this->fieldsModified)
+    {
+      return true;
+    }
+
+    if (isset($this->data['embeds']))
+    {
+      foreach ($this->data['embeds'] as $embed)
+      {
+        if (null !== $embed)
+        {
+          if ($embed instanceof MondongoDocumentEmbed)
+          {
+            if ($embed->isModified())
+            {
+              return true;
+            }
+          }
+          else
+          {
+            foreach ($embed as $e)
+            {
+              if ($e->isModified())
+              {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return false;
   }
 
+  /**
+   * Returns the fields modified with old values.
+   *
+   * @return array The fields modified.
+   */
   public function getFieldsModified()
   {
     return $this->fieldsModified;
   }
 
+  /**
+   * Clear the fields modified.
+   *
+   * @return void
+   */
   public function clearFieldsModified()
   {
     $this->fieldsModified = array();
   }
 
+  /**
+   * Revert the fields modified.
+   *
+   * @return void
+   */
   public function revertFieldsModified()
   {
     foreach ($this->fieldsModified as $name => $value)
@@ -70,8 +121,44 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
     $this->clearFieldsModified();
   }
 
-  /*
-   * setData
+  /**
+   * Clear the modifieds of the document.
+   *
+   * @return void
+   */
+  public function clearModified()
+  {
+    $this->clearFieldsModified();
+
+    if (isset($this->data['embeds']))
+    {
+      foreach ($this->data['embeds'] as $embed)
+      {
+        if (null !== $embed)
+        {
+          if ($embed instanceof MondongoDocumentEmbed)
+          {
+            $embed->clearFieldsModified();
+          }
+          else
+          {
+            foreach ($embed as $e)
+            {
+              $e->clearFieldsModified();
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Set the data of the document (hydrate).
+   *
+   * @param array   $data    The data.
+   * @param Closure $closure The closure to PHP.
+   *
+   * @return void
    */
   public function setData($data, $closureToPHP = null)
   {
@@ -90,10 +177,7 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
 
     if ($data)
     {
-      foreach ($data as $name => $value)
-      {
-        $this->doSet($name, $value);
-      }
+      $this->fromArray($data);
     }
 
     // PERFORMANCE
@@ -103,8 +187,13 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
     $this->fieldsModified = array();
   }
 
-  /*
-   * set, get
+  /**
+   * Set a datum.
+   *
+   * @param string $name  The name.
+   * @param mixed  $value The value.
+   *
+   * @return void
    */
   public function set($name, $value)
   {
@@ -133,6 +222,13 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
     return $this->doSet($name, $value);
   }
 
+  /**
+   * Returns a datum.
+   *
+   * @param string $name The name.
+   *
+   * @return mixed The datum.
+   */
   public function get($name)
   {
     $class = get_class($this);
@@ -160,8 +256,14 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
     return $this->doGet($name);
   }
 
-  /*
-   * doSet.
+  /**
+   * Do the set of a datum,
+   *
+   * @param string $name     The name.
+   * @param mixed  $value    The value.
+   * @param bool   $modified If the change is modified or no.
+   *
+   * @return void
    */
   protected function doSet($name, $value, $modified = true)
   {
@@ -239,6 +341,43 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
       return;
     }
 
+    // embeds
+    if (isset($this->data['embeds']) && array_key_exists($name, $this->data['embeds']))
+    {
+      $embed = $this->getDefinition()->getEmbed($name);
+      $class = $embed['class'];
+
+      // one
+      if ('one' == $embed['type'])
+      {
+        if (!$value instanceof $class)
+        {
+          throw new InvalidArgumentException(sprintf('The embed "%s" is not a instance of "%s".', $name, $class));
+        }
+      }
+      // many
+      else
+      {
+        if (!$value instanceof MondongoGroup)
+        {
+          throw new InvalidArgumentException(sprintf('The embed "%s" is not a instanceof MondongoGroup.', $name));
+        }
+
+        foreach ($value as $v)
+        {
+          if (!$v instanceof $class)
+          {
+            throw new InvalidArgumentException(sprintf('The embed "%s" is not a instance of "%s".', $name, $class));
+          }
+        }
+
+      }
+
+      $this->data['embeds'][$name] = $value;
+
+      return;
+    }
+
     // more
     if ($this->hasDoSetMore($name))
     {
@@ -250,17 +389,37 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
     throw new InvalidArgumentException(sprintf('The data "%s" does not exists.', $name));
   }
 
+  /**
+   * Returns if has more doSet for a name.
+   *
+   * @param string $name The name,
+   *
+   * @return bool Returns if has more doSet.
+   */
   protected function hasDoSetMore($name)
   {
     return false;
   }
 
+  /**
+   * Process more doSet.
+   *
+   * @param string $name     The name.
+   * @param mixed  $value    The value.
+   * @param bool   $modified If the change is modified or no.
+   *
+   * @return void
+   */
   protected function doSetMore($name, $value, $modified)
   {
   }
 
-  /*
-   * doGet.
+  /**
+   * Do the get of a datum.
+   *
+   * @param string The name.
+   *
+   * @return mixed The datum.
    */
   protected function doGet($name)
   {
@@ -299,7 +458,7 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
 
           if ($value = $repository->find(array('_id' => array('$in' => $id))))
           {
-            $value = new MondongoGroupArray($value, array($this, 'updateReferences'));
+            $value = new MondongoGroup($value, array($this, 'updateReferences'));
           }
         }
 
@@ -314,6 +473,31 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
       return $this->data['references'][$name];
     }
 
+    // embeds
+    if (isset($this->data['embeds']) && array_key_exists($name, $this->data['embeds']))
+    {
+      if (null === $this->data['embeds'][$name])
+      {
+        $embed = $this->getDefinition()->getEmbed($name);
+        $class = $embed['class'];
+
+        // one
+        if ('one' == $embed['type'])
+        {
+          $value = new $class();
+        }
+        // many
+        else
+        {
+          $value = new MondongoGroup();
+        }
+
+        $this->data['embeds'][$name] = $value;
+      }
+
+      return $this->data['embeds'][$name];
+    }
+
     // more
     if ($this->hasDoGetMore($name))
     {
@@ -323,17 +507,33 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
     throw new InvalidArgumentException(sprintf('The data "%s" does not exists.', $name));
   }
 
+  /**
+   * Returns if has more doGet for a name.
+   *
+   * @param string $name The name,
+   *
+   * @return bool Returns if has more doGet.
+   */
   protected function hasDoGetMore($name)
   {
     return false;
   }
 
+  /**
+   * Process more doGet.
+   *
+   * @param string $name The name.
+   *
+   * @return void
+   */
   protected function doGetMore($name)
   {
   }
 
-  /*
-   * UpdateReferences.
+  /**
+   * Update the references.
+   *
+   * @return void
    */
   public function updateReferences()
   {
@@ -362,18 +562,64 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
     }
   }
 
-  /*
-   * toArray, fromArray.
+  /**
+   * Import the data from array.
+   *
+   * @param array $array The array.
+   *
+   * @return void
    */
   public function fromArray(array $array)
   {
     foreach ($array as $name => $value)
     {
-      $this->set($name, $value);
+      if (isset($this->data['fields']) && array_key_exists($name, $this->data['fields']))
+      {
+        $this->set($name, $value);
+
+        continue;
+      }
+
+      if (isset($this->data['embeds']) && array_key_exists($name, $this->data['embeds']))
+      {
+        $embed = $this->get($name);
+
+        // one
+        if ($embed instanceof MondongoDocumentEmbed)
+        {
+          $embed->fromArray($value);
+        }
+        // many
+        else
+        {
+          $embedDefinition = $this->getDefinition()->getEmbed($name);
+          $class           = $embedDefinition['class'];
+
+          $elements = array();
+          foreach ($value as $datum)
+          {
+            $elements[] = $element = new $class();
+            $element->fromArray($datum);
+          }
+
+          $embed->setElements($elements);
+        }
+
+        continue;
+      }
+
+      throw new InvalidArgumentException(sprintf('The data "%s" does not exists.', $name));
     }
   }
 
-  public function toArray()
+  /**
+   * Export the data to array.
+   *
+   * @param bool $withEmbeds If export embeds (TRUE by default).
+   *
+   * @return array The data.
+   */
+  public function toArray($withEmbeds = true)
   {
     $array = array();
 
@@ -381,9 +627,39 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
     {
       foreach ($this->data['fields'] as $name => $value)
       {
-        if (null !== $value)
+        if (null === $value)
         {
-          $array[$name] = $value;
+          continue;
+        }
+
+        $array[$name] = $value;
+      }
+    }
+
+    if ($withEmbeds && isset($this->data['embeds']))
+    {
+      foreach ($this->data['embeds'] as $name => $value)
+      {
+        if (null === $value)
+        {
+          continue;
+        }
+
+        // one
+        if ($value instanceof MondongoDocumentEmbed)
+        {
+          $array[$name] = $value->toArray();
+        }
+        // many
+        else
+        {
+          $arrayEmbed = array();
+          foreach ($value as $key => $element)
+          {
+            $arrayEmbed[$key] = $element->toArray();
+          }
+
+          $array[$name] = $arrayEmbed;
         }
       }
     }
@@ -427,19 +703,29 @@ abstract class MondongoDocumentBaseSpeed implements ArrayAccess
     throw new LogicException('Cannot isset data.');
   }
 
-  /*
-   * mutators
+  /**
+   * Returns the mutators.
+   *
+   * @return array The mutators.
    */
   protected function getMutators()
   {
     return array_merge(
-      array_keys(isset($this->data['fields']) ? $this->data['fields'] : array()),
-      array_keys(isset($this->data['references']) ? $this->data['references'] : array())
+      isset($this->data['fields']) ? array_keys($this->data['fields']) : array(),
+      isset($this->data['references']) ? array_keys($this->data['references']) : array(),
+      isset($this->data['embeds']) ? array_keys($this->data['embeds']) : array()
     );
   }
 
-  /*
+  /**
    * __call
+   *
+   * @param string $name      The function name.
+   * @param array  $arguments The arguments.
+   *
+   * @return mixed The return of the extension.
+   *
+   * @throws BadMethodCallException If the method does not exists.
    */
   public function __call($name, $arguments)
   {
