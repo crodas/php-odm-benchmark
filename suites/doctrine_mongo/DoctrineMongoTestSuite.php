@@ -43,6 +43,8 @@ class DoctrineMongoTestSuite extends TestSuite
 
   protected function insertTest($nb)
   {
+    $this->dm->clear();
+
     for ($i = 1; $i <= $nb; $i++)
     {
       $this->documents[$i] = $document = new Documents\Document();
