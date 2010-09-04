@@ -6,7 +6,7 @@ abstract class TestSuite
 
   public function __construct()
   {
-    $db = 'php_odrm_benchmark';
+    $db = 'php_odm_benchmark';
 
     $this->mongo = new Mongo();
     $this->mongo->dropDB($db);
