@@ -2,9 +2,19 @@
 
 require_once(__DIR__.'/../../lib/TestSuite.php');
 
+require_once(__DIR__.'/../../vendor/mondongo/vendor/symfony/src/Symfony/Component/HttpFoundation/UniversalClassLoader.php');
+$loader = new \Symfony\Component\HttpFoundation\UniversalClassLoader();
+$loader->registerNamespaces(array(
+    'Mondongo' => __DIR__.'/../../vendor/mondongo',
+    'Model'    => __DIR__,
+));
+$loader->register();
+
 class MondongoTestSuite extends TestSuite
 {
   protected $mondongo;
+
+  protected $connection;
 
   protected $repository;
 
@@ -12,27 +22,19 @@ class MondongoTestSuite extends TestSuite
 
   protected function initialize()
   {
-    require_once(__DIR__.'/../../vendor/mondongo/autoload/MondongoAutoload.php');
-    MondongoAutoload::register();
+    $this->mondongo = new \Mondongo\Mondongo();
 
-    $this->mondongo = new Mondongo();
-    $this->mondongo->setConnection('default', new MondongoConnection($this->db));
+    $this->connection = new \Mondongo\Connection('mongodb://localhost', $this->db->__toString());
+    $this->mondongo->setConnection('default', $this->connection);
 
-    $this->requireDocumentFile();
-
-    $this->repository = $this->mondongo->getRepository('Document');
-  }
-
-  protected function requireDocumentFile()
-  {
-    require_once(__DIR__.'/model/Document.php');
+    $this->repository = $this->mondongo->getRepository('Model\Document\Document');
   }
 
   protected function createObjectTest($nb)
   {
     for ($i = 1; $i <= $nb; $i++)
     {
-      new Document();
+      new \Model\Document\Document();
     }
   }
 
@@ -40,17 +42,17 @@ class MondongoTestSuite extends TestSuite
   {
     for ($i = 1; $i <= $nb; $i++)
     {
-      $this->documents[$i] = $document = new Document();
-      $document->set('field0', 'value');
-      $document->set('field1', 'value');
-      $document->set('field2', 'value');
-      $document->set('field3', 'value');
-      $document->set('field4', 'value');
-      $document->set('field5', 'value');
-      $document->set('field6', 'value');
-      $document->set('field7', 'value');
-      $document->set('field8', 'value');
-      $document->set('field9', 'value');
+      $this->documents[$i] = $document = new \Model\Document\Document();
+      $document->setField0('value');
+      $document->setField1('value');
+      $document->setField2('value');
+      $document->setField3('value');
+      $document->setField4('value');
+      $document->setField5('value');
+      $document->setField6('value');
+      $document->setField7('value');
+      $document->setField8('value');
+      $document->setField9('value');
     }
 
     $this->repository->save($this->documents);
@@ -60,12 +62,12 @@ class MondongoTestSuite extends TestSuite
   {
     for ($i = 1; $i <= $nb; $i++)
     {
-      $document = $this->repository->get($this->documents[$i]->getId());
+      $document = $this->repository->findOneByMongoId($this->documents[$i]->getId());
     }
   }
 
   protected function hydrateTest($nb)
   {
-    $documents = $this->repository->find(array(), array('limit' => $nb));
+    $documents = $this->repository->find(array('limit' => $nb));
   }
 }
