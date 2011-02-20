@@ -67,7 +67,7 @@ final class CacheCursor Extends MongoCursor
 
     function reset()
     {
-        $this->pos = -1;
+        $this->pos = 0;
     }
 
     function key()
@@ -593,7 +593,7 @@ final class ActiveMongo_Cache
         $docs     = array();
 
         try {
-            foreach ($cursor as $id=>$document) {
+            foreach ($cursor as $id => $document) {
                 $ids[$id]  = $document['_id'];
                 $docs[$id] = $document;
                 $ttl[$id]  = 3600;

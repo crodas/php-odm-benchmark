@@ -34,81 +34,38 @@
   | Authors: César Rodas <crodas@php.net>                                           |
   +---------------------------------------------------------------------------------+
 */
-if (!class_exists('Memcached')) {
-    return FALSE;
-}
 
-final class MemcachedDriver extends CacheDriver
+final class AutoIncrement_Namespace extends ActiveMongo
 {
-    protected $memcached;
-    protected $mem;
-    protected $host = 'localhost';
-    protected $port = 11211;
+    public $class;
+    public $last;
 
-    function config($name, $value)
+    function setup()
     {
-        $configs = array('host', 'port');
-        if (array_search($name, $configs) === FALSE) {
-            throw new Exception("Invalid {$name} configuration");
-        }
-        $this->$name = $value;
+        $this->addIndex('class', array('unique' => TRUE));
     }
 
-    function isEnabled()
-    {
-        if (!$this->host || !$this->port) {
-            return FALSE;
-        }
-        if ($this->memcached InstanceOf Memcached) {
-            return TRUE;
-        }
-        $this->memcached = new Memcached;
-        $this->memcached->addServer($this->host, $this->port);
-        return TRUE;
-    }
-
-    function flush()
-    {
-        $this->memcached->flush();
-    }
-
-    function getMulti(Array $keys, Array &$object)
-    {
-        $object = $this->memcached->getMulti($keys);
-        $nkeys  = array_keys($object);
-        foreach (array_diff($keys, $nkeys) as $k) {
-            $object[$k] = FALSE;
-        }
-        return TRUE;
-    }
-
-    function setMulti(Array $objects, Array $ttl)
-    {
-        $this->memcached->setMulti($objects);
-    }
-
-    function get($key, &$object)
-    {
-        $object = $this->memcached->get($key);
-        if (!$object) {
-            if ($this->memcached->getResultCode() == Memcached::RES_NOTFOUND) {
-                return FALSE;
+    public static function getAutoIncrement($class, &$obj) {
+        if (isset_static_variable($class, 'autoincrementID')) {
+            $counter    = new AutoIncrement_Namespace;
+            $counter->where('class', $class);
+            $counter->limit(1);
+            $counter->findAndModify(array('$inc' => array('last' => 1)), array('upsert' => true, 'new' => true));
+    
+            if (!$counter->Valid()) {
+                throw new Exception("Unexpected error");
+            } else {
+                $counter->current();
             }
-        }
-        return TRUE;
-    }
-
-    function set($key, $object, $ttl)
-    {
-        $this->memcached->set($key, $object, $ttl);
-    }
-
-    function delete(Array $keys)
-    {
-        foreach ($keys as $key) {
-            $this->memcached->delete($key);
+    
+            $obj['_id'] = $counter->last;
         }
     }
 }
 
-ActiveMongo_Cache::setDriver(new MemcachedDriver);
+ActiveMongo::addEvent('before_create', array('AutoIncrement_Namespace', 'getAutoIncrement'));
+
+abstract class ActiveMongo_Autoincrement extends ActiveMongo
+{
+    static public $autoincrementID = true;
+}

@@ -35,29 +35,92 @@
   +---------------------------------------------------------------------------------+
 */
 
-/**
- *  Return TRUE or FALSE whether a static variable
- *  is declared or not
- *
- *  @param $class    Class name
- *  @param $variable Variable name
- *  
- *  @return bool
- */
-function isset_static_variable($class, $variable)
+class ActiveMongo_Cursor_FindAndModify extends ActiveMongo_Cursor_Interface
 {
-    return isset($class::$$variable);
-}
+    protected $query;
+    protected $collection;
+    protected $update;
+    protected $properties;
+    protected $result;
+    protected $has_result;
+    protected $is_valid;
+    protected $cnt;
 
-/**
- *  Return the content of a static variable
- *
- *  @param $class    Class name
- *  @param $variable Variable name
- *  
- *  @return mixed
- */
-function get_static_variable($class, $variable)
-{
-    return $class::$$variable;
+    public function __construct($collection, $query)
+    {
+        $this->collection = $collection;
+        $this->query      = $query; 
+        $this->cnt        = 0;
+    }
+
+    function setUpdate(Array $document)
+    {
+        if (count($document) === 0) {
+            throw new ActiveMongo_Exception("Empty \$document is not allowed");
+        }
+
+        if (substr(key($document), 0, 1) != '$') {
+            /* document to execute is not a command, so let's append
+               it as is */
+            $document = array('$set' => $document);
+        }
+
+        $this->update = $document;
+        $this->next();
+    }
+
+    public function next()
+    {
+        $this->is_valid = FALSE;
+
+        if (isset($this->query['limit']) && $this->cnt >= $this->query['limit']) {
+            return;
+        }
+
+        $command = array(
+            'findandmodify' => $this->collection->getName(),
+            'query'         => $this->query['query'],
+            'update'        => $this->update,
+            'new'           => TRUE,
+            'upsert'        => !empty($this->query['upsert']),
+        );
+
+        if (isset($this->query['sort'])) {
+            $command['sort'] = $this->query['sort'];
+        }
+
+        $this->result   = $this->collection->db->command($command);
+        $this->is_valid = $this->result['ok'] == 1;
+
+        $this->cnt++;
+    }
+
+    public function valid()
+    {
+        return $this->is_valid;
+    }
+
+    public function rewind()
+    {
+    }
+
+    public function reset()
+    {
+    }
+
+    public function current()
+    {
+        return $this->result['value'];
+    }
+
+    public function count()
+    {
+        throw new ActiveMongo_Exception("FindAndModify doesn't support count");
+    }
+
+    public function key()
+    {
+        return (string)$this->result['value']['_id'];
+    }
+
 }

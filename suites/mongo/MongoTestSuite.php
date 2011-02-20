@@ -52,10 +52,6 @@ class MongoTestSuite extends TestSuite
 
   protected function hydrateTest($nb)
   {
-    $documents = array();
-    foreach ($this->collection->find()->limit($nb) as $document)
-    {
-      $documents[] = $document;
-    }
+    $documents = iterator_to_array($this->collection->find()->limit($nb));
   }
 }

@@ -34,81 +34,104 @@
   | Authors: César Rodas <crodas@php.net>                                           |
   +---------------------------------------------------------------------------------+
 */
-if (!class_exists('Memcached')) {
-    return FALSE;
-}
 
-final class MemcachedDriver extends CacheDriver
+class ActiveMongo_Cursor_Native extends ActiveMongo_Cursor_Interface
 {
-    protected $memcached;
-    protected $mem;
-    protected $host = 'localhost';
-    protected $port = 11211;
+    protected $cursor;
+    protected $current;
+    protected $collection;
 
-    function config($name, $value)
+    function __construct($collection, $query=array())
     {
-        $configs = array('host', 'port');
-        if (array_search($name, $configs) === FALSE) {
-            throw new Exception("Invalid {$name} configuration");
+        if ($collection InstanceOf MongoCursor) {
+            $this->collection = null;
+            $this->cursor     = $collection;
+            return;
         }
-        $this->$name = $value;
-    }
-
-    function isEnabled()
-    {
-        if (!$this->host || !$this->port) {
-            return FALSE;
+        $this->collection = $collection;
+        
+        if (count($query['properties']) > 0) {
+            $cursor = $collection->find($query['query'], $query['properties']);
+        } else {
+            $cursor = $collection->find($query['query']);
         }
-        if ($this->memcached InstanceOf Memcached) {
-            return TRUE;
+
+        if (count($query['sort']) > 0) {
+            $cursor->sort($query['sort']);
         }
-        $this->memcached = new Memcached;
-        $this->memcached->addServer($this->host, $this->port);
-        return TRUE;
-    }
 
-    function flush()
-    {
-        $this->memcached->flush();
-    }
-
-    function getMulti(Array $keys, Array &$object)
-    {
-        $object = $this->memcached->getMulti($keys);
-        $nkeys  = array_keys($object);
-        foreach (array_diff($keys, $nkeys) as $k) {
-            $object[$k] = FALSE;
+        if ($query['limit'] > 0) {
+            $cursor->limit($query['limit']);
         }
-        return TRUE;
-    }
-
-    function setMulti(Array $objects, Array $ttl)
-    {
-        $this->memcached->setMulti($objects);
-    }
-
-    function get($key, &$object)
-    {
-        $object = $this->memcached->get($key);
-        if (!$object) {
-            if ($this->memcached->getResultCode() == Memcached::RES_NOTFOUND) {
-                return FALSE;
-            }
+        if ($query['skip'] > 0) {
+            $cursor->skip($query['skip']);
         }
-        return TRUE;
+
+        $this->cursor = $cursor;
     }
 
-    function set($key, $object, $ttl)
+    function count()
     {
-        $this->memcached->set($key, $object, $ttl);
+        return $this->cursor->count();
     }
 
-    function delete(Array $keys)
+    function reset()
     {
-        foreach ($keys as $key) {
-            $this->memcached->delete($key);
+        $this->cursor->getNext();
+        $this->cursor->rewind();
+    }
+
+    function key()
+    {
+        return $this->cursor->key();
+    }
+
+    function valid()
+    {
+        return $this->cursor->valid();
+    }
+
+    function next()
+    {
+        return $this->cursor->next();
+    }
+
+    function current()
+    {
+        return ($this->current = $this->cursor->current());
+    }
+
+    function rewind()
+    {
+        return $this->cursor->rewind();
+    }
+
+    function getReference($class)
+    {
+        if (empty($this->collection)) {
+            throw new ActiveMongo_Exception("Can't have references");
         }
+
+        $ref =  array(
+            '$ref'  => $this->collection->getName(),
+            '$id'   => $this->current['_id'],
+            '$db'   => (string)$this->collection->db,
+            'class' => $class
+        );
+
+        $cursor = $this->cursor;
+        if (!is_callable(array($cursor, "Info"))) {
+            throw new ActiveMongo_Exception("Please upgrade your PECL/Mongo module to use this feature");
+        }
+
+        $ref['dynamic'] = array();
+        $query  = $cursor->Info();
+
+        foreach ($query as $type => $value) {
+            $ref['dynamic'][$type] = $value;
+        }
+
+        return $ref;
     }
+
 }
-
-ActiveMongo_Cache::setDriver(new MemcachedDriver);

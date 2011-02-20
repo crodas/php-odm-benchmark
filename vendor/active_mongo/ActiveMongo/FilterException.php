@@ -35,62 +35,25 @@
   +---------------------------------------------------------------------------------+
 */
 
-
+// Class FilterException {{{
 /**
- *  get_called_class()
+ *  FilterException
  *
- *  Get_called_class() for php5.2
+ *  This is Exception is thrown if any validation
+ *  fails when save() is called.
  *
- *  @return string
  */
-function get_called_class()
+class ActiveMongo_FilterException extends ActiveMongo_Exception 
 {
-    static $cache = array();
-    $class = '';
-    foreach (debug_backtrace() as $bt) {
-        if (isset($bt['class']) && ($bt['type'] == '->' ||$bt['type'] == '::') && isset($bt['file'])) {
-            extract($bt);
-            if (!isset($cache["{$file}_{$line}"])) {
-                $lines = file($file);
-                $expr  = '/([a-z0-9\_]+)::'.$function.'/i';
-                $line  = $lines[$line-1];
-                preg_match_all($expr, $line, $matches);
-                $cache["{$file}_{$line}"] = $matches[1][0];
-            }
-            if ($cache["{$file}_{$line}"] != 'self' && !empty($cache["{$file}_{$line}"])) {
-                $class = $cache["{$file}_{$line}"];
-                break;
-            }
-        }
-    }
-    return $class;
 }
+// }}}
 
-/**
- *  Return TRUE or FALSE whether a static variable
- *  is declared or not
- *
- *  @param $class    Class name
- *  @param $variable Variable name
- *  
- *  @return bool
- */
-function isset_static_variable($class, $variable)
-{
-    $vars = get_class_vars($class);
-    return isset($vars[$variable]);
-}
 
-/**
- *  Return the content of a static variable
- *
- *  @param $class    Class name
- *  @param $variable Variable name
- *  
- *  @return mixed
+/*
+ * Local variables:
+ * tab-width: 4
+ * c-basic-offset: 4
+ * End:
+ * vim600: sw=4 ts=4 fdm=marker
+ * vim<600: sw=4 ts=4
  */
-function get_static_variable($class, $variable)
-{
-    $vars = get_class_vars($class);
-    return $vars[$variable];
-}

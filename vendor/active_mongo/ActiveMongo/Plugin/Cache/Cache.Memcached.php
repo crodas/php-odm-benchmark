@@ -34,32 +34,81 @@
   | Authors: César Rodas <crodas@php.net>                                           |
   +---------------------------------------------------------------------------------+
 */
-
-// Class FilterException {{{
-class  ActiveMongo_Exception extends Exception
-{
+if (!class_exists('Memcached')) {
+    return FALSE;
 }
-// }}}
 
-// Class FilterException {{{
-/**
- *  FilterException
- *
- *  This is Exception is thrown if any validation
- *  fails when save() is called.
- *
- */
-class ActiveMongo_FilterException extends ActiveMongo_Exception 
+final class MemcachedDriver extends CacheDriver
 {
+    protected $memcached;
+    protected $mem;
+    protected $host = 'localhost';
+    protected $port = 11211;
+
+    function config($name, $value)
+    {
+        $configs = array('host', 'port');
+        if (array_search($name, $configs) === FALSE) {
+            throw new Exception("Invalid {$name} configuration");
+        }
+        $this->$name = $value;
+    }
+
+    function isEnabled()
+    {
+        if (!$this->host || !$this->port) {
+            return FALSE;
+        }
+        if ($this->memcached InstanceOf Memcached) {
+            return TRUE;
+        }
+        $this->memcached = new Memcached;
+        $this->memcached->addServer($this->host, $this->port);
+        return true;
+    }
+
+    function flush()
+    {
+        $this->memcached->flush();
+    }
+
+    function getMulti(Array $keys, Array &$object)
+    {
+        $object = $this->memcached->getMulti($keys);
+        $nkeys  = array_keys($object);
+        foreach (array_diff($keys, $nkeys) as $k) {
+            $object[$k] = FALSE;
+        }
+        return TRUE;
+    }
+
+    function setMulti(Array $objects, Array $ttl)
+    {
+        $this->memcached->setMulti($objects);
+    }
+
+    function get($key, &$object)
+    {
+        $object = $this->memcached->get($key);
+        if (!$object) {
+            if ($this->memcached->getResultCode() == Memcached::RES_NOTFOUND) {
+                return FALSE;
+            }
+        }
+        return TRUE;
+    }
+
+    function set($key, $object, $ttl)
+    {
+        $this->memcached->set($key, $object, $ttl);
+    }
+
+    function delete(Array $keys)
+    {
+        foreach ($keys as $key) {
+            $this->memcached->delete($key);
+        }
+    }
 }
-// }}}
 
-
-/*
- * Local variables:
- * tab-width: 4
- * c-basic-offset: 4
- * End:
- * vim600: sw=4 ts=4 fdm=marker
- * vim<600: sw=4 ts=4
- */
+ActiveMongo_Cache::setDriver(new MemcachedDriver);
